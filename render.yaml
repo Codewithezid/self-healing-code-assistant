@@ -29,4 +29,4 @@ services:
       - key: CODE_ASSISTANT_LOG_DESTINATION
         value: none
       - key: CODE_ASSISTANT_ACCESS_TOKEN
-        generateValue: true
+        sync: false
