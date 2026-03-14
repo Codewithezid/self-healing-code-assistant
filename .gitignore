@@ -1,0 +1,10 @@
+.env
+.venv/
+.vercel/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+artifacts/
+data/finetune/
+data/runtime/

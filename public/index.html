@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Code Assistant - LangGraph + Mistral</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500&family=Geist:wght@300;400;500&display=swap"
+  rel="stylesheet"
+/>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="wordmark">
+      <span class="wordmark-title">Code Assistant</span>
+      <span class="wordmark-sep">-</span>
+      <span class="wordmark-sub">LangGraph / Mistral</span>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" type="button" onclick="clearAll()">Clear chat</button>
+      <button class="tbtn" id="jsonBtn" type="button" onclick="toggleJson()">JSON mode</button>
+      <button class="tbtn fill" type="button" onclick="clearAll()">New session</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <aside class="left-panel">
+      <div class="lp-section">
+        <div class="lp-label">Navigation</div>
+        <button class="nav-link active" type="button" onclick="activateNav(this)"><span class="nl-icon">></span> Chat</button>
+        <button class="nav-link" type="button" onclick="activateNav(this)"><span class="nl-icon">*</span> History</button>
+        <button class="nav-link" type="button" onclick="activateNav(this)"><span class="nl-icon">+</span> Fine-tune</button>
+        <button class="nav-link" type="button" onclick="activateNav(this)"><span class="nl-icon">?</span> Docs</button>
+      </div>
+
+      <div class="lp-section">
+        <div class="lp-label">Deployment</div>
+        <div class="field">
+          <label class="field-label" for="apiBase">Backend API base URL</label>
+          <input class="field-input" id="apiBase" type="text" value="" placeholder="https://your-backend.example.com" />
+        </div>
+        <div class="field" id="tokenField" style="display:none">
+          <label class="field-label" for="accessToken">Access token</label>
+          <input class="field-input" id="accessToken" type="password" value="" placeholder="Enter your private backend token" />
+        </div>
+      </div>
+
+      <div class="lp-section">
+        <div class="lp-label">Provider</div>
+        <div class="field">
+          <label class="field-label" for="providerSel">Provider</label>
+          <select class="field-select" id="providerSel" onchange="handleProvider()">
+            <option value="mistral">mistral (hosted)</option>
+            <option value="local">local (HuggingFace)</option>
+          </select>
+        </div>
+        <div class="field" id="modelField">
+          <label class="field-label" for="modelSel">Model</label>
+          <select class="field-select" id="modelSel" onchange="updatePills()">
+            <option>mistral-small-latest</option>
+            <option>mistral-medium-latest</option>
+            <option selected>mistral-large-latest</option>
+            <option>codestral-latest</option>
+          </select>
+        </div>
+        <div class="field" id="localField" style="display:none">
+          <label class="field-label" for="localPath">Local model / adapter path</label>
+          <input class="field-input" id="localPath" type="text" value="Qwen/Qwen2.5-Coder-0.5B-Instruct" />
+        </div>
+      </div>
+
+      <div class="lp-section">
+        <div class="lp-label">Run settings</div>
+        <div class="field">
+          <label class="field-label" for="maxIter">Max iterations</label>
+          <div class="range-row">
+            <input type="range" min="1" max="3" value="3" step="1" id="maxIter" oninput="document.getElementById('iN').textContent=this.value;updatePills()" />
+            <span class="range-num" id="iN">3</span>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="timeoutR">Validation timeout (s)</label>
+          <div class="range-row">
+            <input type="range" min="1" max="5" value="5" step="1" id="timeoutR" oninput="document.getElementById('tN').textContent=this.value" />
+            <span class="range-num" id="tN">5</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="lp-section">
+        <div class="lp-label">Flags</div>
+        <div class="toggle-field">
+          <span class="toggle-text">Show graph events</span>
+          <label class="sw"><input type="checkbox" id="showEvents" /><span class="sw-track"></span></label>
+        </div>
+        <div class="toggle-field">
+          <span class="toggle-text">JSON output</span>
+          <label class="sw"><input type="checkbox" id="jsonToggle" onchange="syncJson()" /><span class="sw-track"></span></label>
+        </div>
+        <div class="toggle-field">
+          <span class="toggle-text">LangSmith tracing</span>
+          <label class="sw"><input type="checkbox" id="tracing" /><span class="sw-track"></span></label>
+        </div>
+      </div>
+    </aside>
+
+    <div class="center">
+      <div class="chat-area" id="chatArea">
+        <div id="welcome">
+          <div class="welcome">
+            <div class="welcome-eyebrow">Split Deploy Ready</div>
+            <h1>Deploy the UI free, <em>keep code execution<br />on a safer backend.</em></h1>
+            <p class="welcome-body">
+              This frontend can live on Vercel Hobby for free. Point it at your separate Python backend,
+              then send coding prompts as usual.
+            </p>
+            <hr class="welcome-divider" />
+            <p class="welcome-examples-label">Try one of these to start -</p>
+            <div class="examples-list">
+              <button class="ex-btn" type="button" data-prompt="Write a function that returns the Fibonacci sequence up to n." onclick="fillExample(this)">
+                <span class="ex-arrow">^</span>
+                <span class="ex-text"><strong>Fibonacci sequence</strong>Write a function that returns the Fibonacci sequence up to n</span>
+              </button>
+              <button class="ex-btn" type="button" data-prompt="Create a palindrome checker with an example run." onclick="fillExample(this)">
+                <span class="ex-arrow">^</span>
+                <span class="ex-text"><strong>Palindrome checker</strong>Create a palindrome checker with an example run</span>
+              </button>
+              <button class="ex-btn" type="button" data-prompt="Implement iterative binary search on a sorted list." onclick="fillExample(this)">
+                <span class="ex-arrow">^</span>
+                <span class="ex-text"><strong>Binary search</strong>Implement iterative binary search on a sorted list</span>
+              </button>
+              <button class="ex-btn" type="button" data-prompt="Read a CSV file and return rows as dicts using only stdlib." onclick="fillExample(this)">
+                <span class="ex-arrow">^</span>
+                <span class="ex-text"><strong>CSV parser</strong>Read a CSV file and return rows as dicts using only stdlib</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="msgs" class="message-wrap" style="display:none"></div>
+      </div>
+
+      <div class="input-zone">
+        <div class="input-inner">
+          <div class="textarea-wrap">
+            <textarea id="prompt" placeholder="Describe the Python code you need..." rows="2" oninput="autoH(this)" onkeydown="handleKey(event)"></textarea>
+            <div class="input-row">
+              <div class="input-hints">
+                <span class="hint-pill active" id="pp">mistral</span>
+                <span class="hint-pill active" id="pm">mistral-large-latest</span>
+                <span class="hint-pill" id="pi">3 retries</span>
+                <span class="hint-pill" id="pj">json</span>
+              </div>
+              <button class="send-btn" id="sendBtn" type="button" onclick="send()">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                  <path d="M1 12L12 1M12 1H4M12 1V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <p class="input-fn">Enter to send - Shift+Enter for new line - generated code is validated on your backend</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div class="rp-head">Session info</div>
+      <p class="rp-sub">Runtime stats for the current browser session.</p>
+      <div class="stat-block">
+        <div class="stat-row"><span class="stat-key">Status</span><span class="stat-val" id="sStat" style="color:var(--ink3)">idle</span></div>
+        <div class="stat-row"><span class="stat-key">Queries</span><span class="stat-val" id="sQ">0</span></div>
+        <div class="stat-row"><span class="stat-key">Iterations</span><span class="stat-val" id="sI">-</span></div>
+        <div class="stat-row"><span class="stat-key">Last result</span><span class="stat-val" id="sR">-</span></div>
+      </div>
+      <hr class="rp-divider" />
+      <div class="rp-head">Graph pipeline</div>
+      <div class="pipeline-steps" id="pipe">
+        <div class="ps wait" data-stage="generate_code"><span class="ps-dot"></span>generate_code</div>
+        <div class="ps wait" data-stage="execute_code"><span class="ps-dot"></span>execute_code</div>
+        <div class="ps wait" data-stage="check_result"><span class="ps-dot"></span>check_result</div>
+        <div class="ps wait" data-stage="retry_or_end"><span class="ps-dot"></span>retry_or_end</div>
+      </div>
+      <hr class="rp-divider" />
+      <div class="rp-log-label">Activity log</div>
+      <div id="actLog">
+        <div class="log-entry"><span class="log-time">--</span><span class="log-txt" style="color:var(--ink4)">No activity yet.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/config.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

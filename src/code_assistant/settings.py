@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+
+def _split_csv(value: str | None, *, default: tuple[str, ...] = ()) -> tuple[str, ...]:
+    if not value:
+        return default
+    parts = [item.strip() for item in value.split(",")]
+    return tuple(item for item in parts if item)
+
+
+def _int_env(name: str, default: int, *, minimum: int = 1, maximum: int | None = None) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    value = max(minimum, value)
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
+class BackendSettings:
+    project_root: Path
+    public_dir: Path
+    allowed_origins: tuple[str, ...]
+    allowed_providers: tuple[str, ...]
+    default_provider: str
+    auth_token: str
+    max_iterations_cap: int
+    validation_timeout_cap: int
+    rate_limit_requests: int
+    rate_limit_window_seconds: int
+    log_destination: str
+    failure_log_path: Path
+    upstash_redis_rest_url: str
+    upstash_redis_rest_token: str
+    failure_log_key: str
+    allow_credentials: bool
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> BackendSettings:
+    project_root = Path(__file__).resolve().parents[2]
+    public_dir = project_root / "public"
+    allowed_providers = _split_csv(
+        os.getenv("CODE_ASSISTANT_ALLOWED_PROVIDERS"),
+        default=("mistral",),
+    )
+    default_provider = os.getenv("CODE_ASSISTANT_DEFAULT_PROVIDER", allowed_providers[0]).strip() or allowed_providers[0]
+    if default_provider not in allowed_providers:
+        default_provider = allowed_providers[0]
+
+    return BackendSettings(
+        project_root=project_root,
+        public_dir=public_dir,
+        allowed_origins=_split_csv(os.getenv("CODE_ASSISTANT_ALLOWED_ORIGINS")),
+        allowed_providers=allowed_providers,
+        default_provider=default_provider,
+        auth_token=os.getenv("CODE_ASSISTANT_ACCESS_TOKEN", "").strip(),
+        max_iterations_cap=_int_env("CODE_ASSISTANT_MAX_ITERATIONS_CAP", 3, minimum=1, maximum=10),
+        validation_timeout_cap=_int_env("CODE_ASSISTANT_VALIDATION_TIMEOUT_CAP", 5, minimum=1, maximum=30),
+        rate_limit_requests=_int_env("CODE_ASSISTANT_RATE_LIMIT_REQUESTS", 8, minimum=1, maximum=200),
+        rate_limit_window_seconds=_int_env("CODE_ASSISTANT_RATE_LIMIT_WINDOW_SECONDS", 300, minimum=10, maximum=86400),
+        log_destination=os.getenv("CODE_ASSISTANT_LOG_DESTINATION", "none").strip().lower() or "none",
+        failure_log_path=project_root / os.getenv("CODE_ASSISTANT_FAILURE_LOG", "data/runtime/failure_log.jsonl"),
+        upstash_redis_rest_url=os.getenv("UPSTASH_REDIS_REST_URL", "").strip(),
+        upstash_redis_rest_token=os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip(),
+        failure_log_key=os.getenv("CODE_ASSISTANT_FAILURE_LOG_KEY", "code-assistant:failures").strip() or "code-assistant:failures",
+        allow_credentials=_bool_env("CODE_ASSISTANT_ALLOW_CREDENTIALS", False),
+    )
