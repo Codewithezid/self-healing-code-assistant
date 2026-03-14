@@ -25,6 +25,14 @@ function apiUrl(path) {
   return base ? `${base}${path}` : path;
 }
 
+function isLocalHost() {
+  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
+function hasBackendConfig() {
+  return Boolean((APP_STATE.config.apiBaseUrl || "").trim()) || isLocalHost();
+}
+
 function autoH(el) {
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, 180) + "px";
@@ -348,11 +356,36 @@ async function requestJson(path, init = {}) {
     ...authHeaders()
   };
   const response = await fetch(apiUrl(path), { ...init, headers });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.detail || "Request failed.");
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+  let data = null;
+
+  if (text) {
+    if (contentType.includes("application/json")) {
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        throw new Error("The backend returned malformed JSON.");
+      }
+    } else {
+      const looksLikeHtml = /^\s*</.test(text);
+      if (!hasBackendConfig() && looksLikeHtml) {
+        throw new Error(
+          "Backend API base URL is not configured. Add your deployed backend URL in the Deployment panel."
+        );
+      }
+      throw new Error(
+        looksLikeHtml
+          ? "The request reached a web page instead of the backend API. Check the backend URL in the Deployment panel."
+          : "The backend did not return JSON."
+      );
+    }
   }
-  return data;
+
+  if (!response.ok) {
+    throw new Error((data && data.detail) || "Request failed.");
+  }
+  return data || {};
 }
 
 async function send() {
@@ -363,6 +396,13 @@ async function send() {
   const promptEl = document.getElementById("prompt");
   const prompt = promptEl.value.trim();
   if (!prompt) {
+    return;
+  }
+
+  if (!hasBackendConfig()) {
+    addErrMsg("Backend API base URL is not configured. Add your deployed backend URL in the Deployment panel first.");
+    addLog("Missing backend URL. Enter the backend API base URL, then try again.");
+    setStat("error");
     return;
   }
 
@@ -449,6 +489,12 @@ async function boot() {
   APP_STATE.config.apiBaseUrl = apiBaseInput.value.trim();
   updatePills();
   syncJson();
+
+  if (!hasBackendConfig()) {
+    addLog("Backend API base URL is missing. Add your deployed backend URL in the Deployment panel.");
+    setStat("error");
+    return;
+  }
 
   try {
     const backendConfig = await requestJson("/api/config");
