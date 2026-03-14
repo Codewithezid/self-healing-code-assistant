@@ -1,8 +1,32 @@
 services:
   - type: web
-    name: langgraph-code-assistant-backend
+    name: self-healing-code-assistant-backend
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python web_main.py
+    healthCheckPath: /api/health
     autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.2
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: CODE_ASSISTANT_ALLOWED_ORIGINS
+        sync: false
+      - key: CODE_ASSISTANT_ALLOWED_PROVIDERS
+        value: mistral
+      - key: CODE_ASSISTANT_DEFAULT_PROVIDER
+        value: mistral
+      - key: CODE_ASSISTANT_MAX_ITERATIONS_CAP
+        value: "3"
+      - key: CODE_ASSISTANT_VALIDATION_TIMEOUT_CAP
+        value: "5"
+      - key: CODE_ASSISTANT_RATE_LIMIT_REQUESTS
+        value: "8"
+      - key: CODE_ASSISTANT_RATE_LIMIT_WINDOW_SECONDS
+        value: "300"
+      - key: CODE_ASSISTANT_LOG_DESTINATION
+        value: none
+      - key: CODE_ASSISTANT_ACCESS_TOKEN
+        generateValue: true
