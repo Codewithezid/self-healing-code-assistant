@@ -14,6 +14,20 @@ const APP_STATE = {
   config: { ...DEFAULT_APP_CONFIG, ...(window.APP_CONFIG || {}) }
 };
 
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function valueOf(id, fallback = "") {
+  const el = byId(id);
+  return el && "value" in el ? el.value : fallback;
+}
+
+function checkedOf(id, fallback = false) {
+  const el = byId(id);
+  return el && "checked" in el ? Boolean(el.checked) : fallback;
+}
+
 function apiUrl(path) {
   return path;
 }
@@ -44,33 +58,56 @@ function esc(value) {
 }
 
 function handleProvider() {
-  const provider = document.getElementById("providerSel").value;
-  document.getElementById("modelField").style.display = provider === "mistral" ? "" : "none";
-  document.getElementById("localField").style.display = provider === "local" ? "" : "none";
-  document.getElementById("pp").textContent = provider;
+  const provider = valueOf("providerSel", "mistral");
+  const modelField = byId("modelField");
+  const localField = byId("localField");
+  const providerPill = byId("pp");
+  if (modelField) {
+    modelField.style.display = provider === "mistral" ? "" : "none";
+  }
+  if (localField) {
+    localField.style.display = provider === "local" ? "" : "none";
+  }
+  if (providerPill) {
+    providerPill.textContent = provider;
+  }
   updatePills();
 }
 
 function updatePills() {
-  const provider = document.getElementById("providerSel").value;
+  const provider = valueOf("providerSel", "mistral");
   const model = provider === "mistral"
-    ? document.getElementById("modelSel").value
-    : document.getElementById("localPath").value.split("/").pop();
-  document.getElementById("pm").textContent = model || "local-model";
-  document.getElementById("pi").textContent = document.getElementById("maxIter").value + " retries";
+    ? valueOf("modelSel", "mistral-large-latest")
+    : valueOf("localPath", "Qwen/Qwen2.5-Coder-0.5B-Instruct").split("/").pop();
+  const modelPill = byId("pm");
+  const retryPill = byId("pi");
+  if (modelPill) {
+    modelPill.textContent = model || "local-model";
+  }
+  if (retryPill) {
+    retryPill.textContent = valueOf("maxIter", "3") + " retries";
+  }
 }
 
 function toggleJson() {
-  const cb = document.getElementById("jsonToggle");
+  const cb = byId("jsonToggle");
+  if (!cb) {
+    return;
+  }
   cb.checked = !cb.checked;
   syncJson();
 }
 
 function syncJson() {
-  APP_STATE.jMode = document.getElementById("jsonToggle").checked;
-  const button = document.getElementById("jsonBtn");
-  button.style.cssText = APP_STATE.jMode ? "background:var(--ink);color:var(--paper);border-color:var(--ink)" : "";
-  document.getElementById("pj").classList.toggle("active", APP_STATE.jMode);
+  APP_STATE.jMode = checkedOf("jsonToggle", false);
+  const button = byId("jsonBtn");
+  if (button) {
+    button.style.cssText = APP_STATE.jMode ? "background:var(--ink);color:var(--paper);border-color:var(--ink)" : "";
+  }
+  const jsonPill = byId("pj");
+  if (jsonPill) {
+    jsonPill.classList.toggle("active", APP_STATE.jMode);
+  }
 }
 
 function clearAll() {
@@ -369,14 +406,14 @@ async function send() {
 
   const payload = {
     prompt,
-    provider: document.getElementById("providerSel").value,
-    model: document.getElementById("modelSel").value,
-    local_model: document.getElementById("localPath").value,
-    max_iterations: Number(document.getElementById("maxIter").value),
-    validation_timeout: Number(document.getElementById("timeoutR").value),
-    show_events: document.getElementById("showEvents").checked,
-    json_mode: document.getElementById("jsonToggle").checked,
-    tracing: document.getElementById("tracing").checked
+    provider: valueOf("providerSel", "mistral"),
+    model: valueOf("modelSel", "mistral-large-latest"),
+    local_model: valueOf("localPath", "Qwen/Qwen2.5-Coder-0.5B-Instruct"),
+    max_iterations: Number(valueOf("maxIter", "3")),
+    validation_timeout: Number(valueOf("timeoutR", "5")),
+    show_events: checkedOf("showEvents", false),
+    json_mode: checkedOf("jsonToggle", false),
+    tracing: checkedOf("tracing", false)
   };
 
   addUserMsg(prompt);
@@ -422,7 +459,10 @@ async function send() {
 }
 
 async function boot() {
-  document.getElementById("localPath").addEventListener("input", updatePills);
+  const localPath = byId("localPath");
+  if (localPath) {
+    localPath.addEventListener("input", updatePills);
+  }
 
   updatePills();
   syncJson();
