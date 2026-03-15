@@ -20,6 +20,7 @@ from langgraph.graph.message import add_messages
 from .logging_utils import append_failure_record, utc_now_iso
 from .local_backend import LocalCodeGenerator
 from .models import CodeSolution
+from .rag import ProjectRAG
 
 load_dotenv()
 
@@ -32,6 +33,9 @@ class GraphState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     generation: CodeSolution
     iterations: int
+    question: str
+    rag_context: str
+    rag_sources: list[dict[str, str]]
 
 
 class CodeAssistant:
@@ -52,6 +56,15 @@ class CodeAssistant:
         provider: str = "mistral",
         local_model_name: str = "Qwen/Qwen2.5-Coder-0.5B-Instruct",
         local_max_new_tokens: int = 768,
+        rag_enabled: bool = False,
+        rag_auto_index: bool = False,
+        rag_project_root: str | None = None,
+        rag_qdrant_path: str = "data/qdrant",
+        rag_collection_name: str = "code-assistant-project",
+        rag_embedding_model: str = "mistral-embed",
+        rag_retrieval_k: int = 4,
+        rag_chunk_size: int = 1200,
+        rag_chunk_overlap: int = 200,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
@@ -67,6 +80,20 @@ class CodeAssistant:
         self.provider = provider
         self.local_model_name = local_model_name
         self.local_max_new_tokens = local_max_new_tokens
+        self.rag = (
+            ProjectRAG(
+                project_root=rag_project_root or Path(__file__).resolve().parents[2],
+                qdrant_path=rag_qdrant_path,
+                collection_name=rag_collection_name,
+                embedding_model=rag_embedding_model,
+                retrieval_k=rag_retrieval_k,
+                chunk_size=rag_chunk_size,
+                chunk_overlap=rag_chunk_overlap,
+                auto_index=rag_auto_index,
+            )
+            if rag_enabled
+            else None
+        )
         self.failure_log_path = Path(
             failure_log_path
             or os.getenv("CODE_ASSISTANT_FAILURE_LOG", "data/runtime/failure_log.jsonl")
@@ -100,6 +127,8 @@ class CodeAssistant:
                     "system",
                     (
                         "You are a careful coding assistant. Return code that can run as-is. "
+                        "When project context is supplied, use it to stay consistent with the codebase "
+                        "and prefer the local project patterns over generic advice. "
                         "Always provide: "
                         "1) a short explanation, "
                         "2) the complete import block, "
@@ -108,6 +137,10 @@ class CodeAssistant:
                         "The imports field must contain only valid Python import statements, "
                         "comments, or be empty. Never write prose such as 'None required' in imports."
                     ),
+                ),
+                (
+                    "system",
+                    "Relevant project context:\n{project_context}",
                 ),
                 ("placeholder", "{messages}"),
             ]
@@ -129,12 +162,18 @@ class CodeAssistant:
                     "system",
                     (
                         "You are a careful coding assistant. Respond with valid JSON only. "
+                        "When project context is supplied, use it to stay consistent with the "
+                        "existing codebase. "
                         'The JSON object must contain exactly these string keys: "prefix", '
                         '"imports", and "code". '
                         "The code value must be a single string containing the full executable code body. "
                         "The imports value must contain only valid Python import statements, comments, or be empty. "
                         "Do not wrap the JSON in markdown fences."
                     ),
+                ),
+                (
+                    "system",
+                    "Relevant project context:\n{project_context}",
                 ),
                 ("placeholder", "{messages}"),
             ]
@@ -190,6 +229,12 @@ class CodeAssistant:
             payload = json.loads(text[start : end + 1])
         return CodeAssistant._normalize_solution(CodeSolution.model_validate(payload))
 
+    @staticmethod
+    def _project_context_text(rag_context: str) -> str:
+        if rag_context.strip():
+            return rag_context
+        return "No project context was retrieved for this request."
+
     def _build_graph(self):
         chain = self._build_chain()
         fallback_prompt, fallback_llm = self._build_fallback_components()
@@ -236,12 +281,25 @@ class CodeAssistant:
             messages = state["messages"]
             iterations = state["iterations"]
             events = state.get("events", [])
+            project_context = self._project_context_text(state.get("rag_context", ""))
             try:
-                code_solution = self._normalize_solution(chain.invoke({"messages": messages}))
+                code_solution = self._normalize_solution(
+                    chain.invoke(
+                        {
+                            "messages": messages,
+                            "project_context": project_context,
+                        }
+                    )
+                )
             except Exception:
                 if self.provider == "local" or fallback_prompt is None or fallback_llm is None:
                     raise
-                fallback_messages = fallback_prompt.invoke({"messages": messages})
+                fallback_messages = fallback_prompt.invoke(
+                    {
+                        "messages": messages,
+                        "project_context": project_context,
+                    }
+                )
                 fallback_response = fallback_llm.invoke(fallback_messages)
                 code_solution = self._parse_fallback_response(fallback_response.content)
             messages = messages + [
@@ -266,6 +324,43 @@ class CodeAssistant:
                 "generation": code_solution,
                 "messages": messages,
                 "iterations": iterations + 1,
+            }
+
+        def retrieve_context(state: GraphState) -> dict[str, Any]:
+            events = state.get("events", [])
+            if self.rag is None:
+                return {"rag_context": "", "rag_sources": [], "events": events}
+
+            try:
+                bundle = self.rag.retrieve(state["question"])
+            except Exception as exc:
+                return {
+                    "rag_context": "",
+                    "rag_sources": [],
+                    "events": events
+                    + [
+                        {
+                            "stage": "retrieve_context",
+                            "status": "error",
+                            "iteration": 0,
+                            "detail": str(exc),
+                        }
+                    ],
+                }
+
+            status = "done" if bundle.context else "skipped"
+            return {
+                "rag_context": bundle.context,
+                "rag_sources": bundle.sources,
+                "events": events
+                + [
+                    {
+                        "stage": "retrieve_context",
+                        "status": status,
+                        "iteration": 0,
+                        "detail": bundle.detail,
+                    }
+                ],
             }
 
         def code_check(state: GraphState) -> dict[str, Any]:
@@ -404,9 +499,11 @@ class CodeAssistant:
                 return "end"
             return "generate"
 
+        builder.add_node("retrieve_context", retrieve_context)
         builder.add_node("generate", generate)
         builder.add_node("check_code", code_check)
-        builder.add_edge(START, "generate")
+        builder.add_edge(START, "retrieve_context")
+        builder.add_edge("retrieve_context", "generate")
         builder.add_edge("generate", "check_code")
         builder.add_conditional_edges(
             "check_code",
@@ -427,7 +524,15 @@ class CodeAssistant:
             }
         }
         result = self._graph.invoke(
-            {"error": "pending", "events": [], "messages": [("user", question)], "iterations": 0},
+            {
+                "error": "pending",
+                "events": [],
+                "messages": [("user", question)],
+                "iterations": 0,
+                "question": question,
+                "rag_context": "",
+                "rag_sources": [],
+            },
             config=config,
         )
         self._log_failure_if_needed(question, resolved_thread_id, result)
@@ -442,7 +547,15 @@ class CodeAssistant:
             }
         }
         return self._graph.stream(
-            {"error": "pending", "events": [], "messages": [("user", question)], "iterations": 0},
+            {
+                "error": "pending",
+                "events": [],
+                "messages": [("user", question)],
+                "iterations": 0,
+                "question": question,
+                "rag_context": "",
+                "rag_sources": [],
+            },
             config=config,
             stream_mode="values",
         )

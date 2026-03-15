@@ -124,7 +124,11 @@ class LocalCodeGenerator:
         return {"prefix": "", "imports": "\n".join(import_lines).strip(), "code": "\n".join(code_lines).strip()}
 
     @staticmethod
-    def _normalize_messages(messages: list[Any]) -> list[dict[str, str]]:
+    def _normalize_messages(
+        messages: list[Any],
+        *,
+        project_context: str = "",
+    ) -> list[dict[str, str]]:
         normalized: list[dict[str, str]] = [
             {
                 "role": "system",
@@ -136,6 +140,13 @@ class LocalCodeGenerator:
                 ),
             }
         ]
+        if project_context.strip():
+            normalized.append(
+                {
+                    "role": "system",
+                    "content": f"Relevant project context:\n{project_context}",
+                }
+            )
 
         for message in messages:
             if isinstance(message, tuple) and len(message) == 2:
@@ -154,7 +165,10 @@ class LocalCodeGenerator:
         return normalized
 
     def invoke(self, payload: dict[str, Any]) -> CodeSolution:
-        messages = self._normalize_messages(payload.get("messages", []))
+        messages = self._normalize_messages(
+            payload.get("messages", []),
+            project_context=str(payload.get("project_context", "")),
+        )
         prompt = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,

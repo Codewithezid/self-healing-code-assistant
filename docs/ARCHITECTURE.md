@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project is split into three layers:
+The project is split into four layers:
 
 1. `public/`
    A static frontend that collects prompts, displays validation results, and talks to the backend over HTTP.
@@ -10,6 +10,8 @@ The project is split into three layers:
    A FastAPI service that exposes `/api/health`, `/api/config`, and `/api/chat`.
 3. `src/code_assistant/assistant.py`
    The LangGraph workflow that generates code, validates it in a subprocess, and retries on failure.
+4. `src/code_assistant/rag.py`
+   An optional local Qdrant-backed retriever for project-aware context.
 
 ## Runtime flow
 
@@ -19,14 +21,16 @@ flowchart TD
     A --> C[/api/chat]
     C --> D[FastAPI backend]
     D --> E[CodeAssistant]
-    E --> F[LangGraph generate node]
-    F --> G[Mistral or local model]
-    E --> H[LangGraph check_code node]
-    H --> I[Isolated Python subprocess]
-    I --> J{Validation passed?}
-    J -- No --> K[Append correction message]
-    K --> F
-    J -- Yes --> L[Return validated result]
+    E --> F[LangGraph retrieve_context node]
+    F --> G[Local Qdrant project index]
+    E --> H[LangGraph generate node]
+    H --> I[Mistral or local model]
+    E --> J[LangGraph check_code node]
+    J --> K[Isolated Python subprocess]
+    K --> L{Validation passed?}
+    L -- No --> M[Append correction message]
+    M --> H
+    L -- Yes --> N[Return validated result]
 ```
 
 ## Main components
@@ -63,13 +67,15 @@ Responsibilities:
 
 ### Assistant workflow
 
-File:
+Files:
 
 - `src/code_assistant/assistant.py`
+- `src/code_assistant/rag.py`
 
 Responsibilities:
 
 - build the model chain
+- optionally retrieve matching project context from local Qdrant
 - run the LangGraph state machine
 - validate imports and code in an isolated subprocess
 - retry with corrective feedback until success or retry exhaustion

@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     show_events: bool = False
     json_mode: bool = False
     tracing: bool = False
+    rag_enabled: bool | None = None
 
 
 class RunEvent(BaseModel):
@@ -55,6 +56,8 @@ class ChatResponse(BaseModel):
     events: list[RunEvent]
     tracing_requested: bool
     json_mode: bool
+    rag_enabled: bool
+    rag_sources: list[str]
 
 
 class BackendConfigResponse(BaseModel):
@@ -65,6 +68,8 @@ class BackendConfigResponse(BaseModel):
     validation_timeout_cap: int
     rate_limit_requests: int
     rate_limit_window_seconds: int
+    rag_available: bool
+    rag_default_enabled: bool
 
 
 def _combined_code(solution: CodeSolution) -> str:
@@ -156,6 +161,8 @@ def create_app() -> FastAPI:
             validation_timeout_cap=settings.validation_timeout_cap,
             rate_limit_requests=settings.rate_limit_requests,
             rate_limit_window_seconds=settings.rate_limit_window_seconds,
+            rag_available=True,
+            rag_default_enabled=settings.rag_enabled,
         )
 
     @app.post("/api/chat", response_model=ChatResponse)
@@ -195,6 +202,7 @@ def create_app() -> FastAPI:
             request_body.validation_timeout,
             settings.validation_timeout_cap,
         )
+        rag_enabled = settings.rag_enabled if request_body.rag_enabled is None else request_body.rag_enabled
         thread_id = str(uuid.uuid4())
         resolved_model = request_body.model
 
@@ -210,6 +218,15 @@ def create_app() -> FastAPI:
                 failure_log_key=settings.failure_log_key,
                 provider=request_body.provider,
                 local_model_name=request_body.local_model,
+                rag_enabled=rag_enabled,
+                rag_auto_index=settings.rag_auto_index,
+                rag_project_root=str(settings.project_root),
+                rag_qdrant_path=str(settings.rag_qdrant_path),
+                rag_collection_name=settings.rag_collection_name,
+                rag_embedding_model=settings.rag_embedding_model,
+                rag_retrieval_k=settings.rag_retrieval_k,
+                rag_chunk_size=settings.rag_chunk_size,
+                rag_chunk_overlap=settings.rag_chunk_overlap,
             )
             result = assistant.run(request_body.prompt, thread_id=thread_id)
         except RuntimeError as exc:
@@ -229,6 +246,11 @@ def create_app() -> FastAPI:
 
         raw_events = result.get("events", [])
         events = [RunEvent.model_validate(event) for event in raw_events]
+        rag_sources = [
+            str(item.get("source", "")).strip()
+            for item in result.get("rag_sources", [])
+            if str(item.get("source", "")).strip()
+        ]
         validation_passed = result.get("error") != "yes"
         validation_message = _extract_validation_message(
             raw_events,
@@ -252,6 +274,8 @@ def create_app() -> FastAPI:
             events=events,
             tracing_requested=request_body.tracing,
             json_mode=request_body.json_mode,
+            rag_enabled=rag_enabled,
+            rag_sources=list(dict.fromkeys(rag_sources)),
         )
 
     if settings.public_dir.exists():

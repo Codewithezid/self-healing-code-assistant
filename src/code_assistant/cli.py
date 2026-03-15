@@ -54,6 +54,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=5,
         help="Timeout in seconds for validating generated code.",
     )
+    parser.add_argument(
+        "--rag",
+        action="store_true",
+        help="Retrieve project context from the local Qdrant index before generation.",
+    )
+    parser.add_argument(
+        "--rag-auto-index",
+        action="store_true",
+        help="Build the local Qdrant index automatically if it does not exist.",
+    )
     return parser
 
 
@@ -80,6 +90,8 @@ def main() -> int:
             validation_timeout_seconds=args.validation_timeout,
             provider=args.provider,
             local_model_name=args.local_model,
+            rag_enabled=args.rag,
+            rag_auto_index=args.rag_auto_index,
         )
     except RuntimeError as exc:
         print(f"Configuration error: {exc}")

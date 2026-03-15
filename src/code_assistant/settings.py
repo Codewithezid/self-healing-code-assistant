@@ -52,6 +52,14 @@ class BackendSettings:
     upstash_redis_rest_token: str
     failure_log_key: str
     allow_credentials: bool
+    rag_enabled: bool
+    rag_auto_index: bool
+    rag_qdrant_path: Path
+    rag_collection_name: str
+    rag_embedding_model: str
+    rag_retrieval_k: int
+    rag_chunk_size: int
+    rag_chunk_overlap: int
 
 
 @lru_cache(maxsize=1)
@@ -89,4 +97,12 @@ def get_settings() -> BackendSettings:
         upstash_redis_rest_token=os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip(),
         failure_log_key=os.getenv("CODE_ASSISTANT_FAILURE_LOG_KEY", "code-assistant:failures").strip() or "code-assistant:failures",
         allow_credentials=_bool_env("CODE_ASSISTANT_ALLOW_CREDENTIALS", False),
+        rag_enabled=_bool_env("CODE_ASSISTANT_RAG_ENABLED", False),
+        rag_auto_index=_bool_env("CODE_ASSISTANT_RAG_AUTO_INDEX", False),
+        rag_qdrant_path=project_root / os.getenv("CODE_ASSISTANT_RAG_QDRANT_PATH", "data/qdrant"),
+        rag_collection_name=os.getenv("CODE_ASSISTANT_RAG_COLLECTION", "code-assistant-project").strip() or "code-assistant-project",
+        rag_embedding_model=os.getenv("CODE_ASSISTANT_RAG_EMBED_MODEL", "mistral-embed").strip() or "mistral-embed",
+        rag_retrieval_k=_int_env("CODE_ASSISTANT_RAG_RETRIEVAL_K", 4, minimum=1, maximum=12),
+        rag_chunk_size=_int_env("CODE_ASSISTANT_RAG_CHUNK_SIZE", 1200, minimum=200, maximum=4000),
+        rag_chunk_overlap=_int_env("CODE_ASSISTANT_RAG_CHUNK_OVERLAP", 200, minimum=0, maximum=1000),
     )

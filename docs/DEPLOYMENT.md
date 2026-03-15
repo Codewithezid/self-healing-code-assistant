@@ -37,10 +37,23 @@ CODE_ASSISTANT_RATE_LIMIT_WINDOW_SECONDS=300
 CODE_ASSISTANT_LOG_DESTINATION=none
 ```
 
+Optional project RAG settings:
+
+```powershell
+CODE_ASSISTANT_RAG_ENABLED=false
+CODE_ASSISTANT_RAG_AUTO_INDEX=false
+CODE_ASSISTANT_RAG_QDRANT_PATH=data/qdrant
+CODE_ASSISTANT_RAG_COLLECTION=code-assistant-project
+CODE_ASSISTANT_RAG_EMBED_MODEL=mistral-embed
+CODE_ASSISTANT_RAG_RETRIEVAL_K=4
+```
+
 ## Operational recommendations
 
 - Keep `CODE_ASSISTANT_ALLOWED_PROVIDERS=mistral` in hosted environments.
 - Keep frontend and API on the same hosted service/domain.
 - Keep retry counts and validation timeouts small on free tiers.
+- The current RAG implementation uses Mistral embeddings, so `MISTRAL_API_KEY` is still required when RAG is enabled.
+- If you enable project RAG, pre-build the index during deployment or startup with `python scripts/index_project_rag.py`.
 - Use Upstash only if you need shared limits across multiple backend instances.
 - Treat the backend as a controlled tool, not a public anonymous endpoint.
