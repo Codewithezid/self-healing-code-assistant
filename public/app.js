@@ -3,7 +3,9 @@ const DEFAULT_APP_CONFIG = {
   allowedProviders: ["mistral"],
   authRequired: false,
   maxIterationsCap: 3,
-  validationTimeoutCap: 5
+  validationTimeoutCap: 5,
+  ragAvailable: true,
+  ragDefaultEnabled: false
 };
 
 const APP_STATE = {
@@ -11,6 +13,7 @@ const APP_STATE = {
   qCount: 0,
   tkN: 0,
   jMode: false,
+  ragMode: false,
   config: { ...DEFAULT_APP_CONFIG, ...(window.APP_CONFIG || {}) }
 };
 
@@ -87,6 +90,10 @@ function updatePills() {
   if (retryPill) {
     retryPill.textContent = valueOf("maxIter", "3") + " retries";
   }
+  const ragPill = byId("pr");
+  if (ragPill) {
+    ragPill.classList.toggle("active", APP_STATE.ragMode);
+  }
 }
 
 function toggleJson() {
@@ -107,6 +114,14 @@ function syncJson() {
   const jsonPill = byId("pj");
   if (jsonPill) {
     jsonPill.classList.toggle("active", APP_STATE.jMode);
+  }
+}
+
+function syncRag() {
+  APP_STATE.ragMode = checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled);
+  const ragPill = byId("pr");
+  if (ragPill) {
+    ragPill.classList.toggle("active", APP_STATE.ragMode);
   }
 }
 
@@ -175,7 +190,7 @@ function resetPipe() {
 }
 
 function setPipe(activeStage) {
-  const order = ["generate_code", "execute_code", "check_result", "retry_or_end"];
+  const order = ["retrieve_context", "generate_code", "execute_code", "check_result", "retry_or_end"];
   document.querySelectorAll("#pipe .ps").forEach((step) => {
     const stage = step.dataset.stage;
     step.className = "ps wait";
@@ -283,6 +298,15 @@ function renderAssistantBody(data) {
     chunks.push(`<p>${esc(data.validation_message)}</p>`);
   }
 
+  if (data.rag_enabled) {
+    const sources = Array.isArray(data.rag_sources) ? data.rag_sources : [];
+    if (sources.length > 0) {
+      chunks.push(`<p><span class="inline-code">rag</span> Retrieved context from ${esc(sources.join(", "))}</p>`);
+    } else {
+      chunks.push("<p><span class=\"inline-code\">rag</span> Enabled, but no project files were retrieved for this request.</p>");
+    }
+  }
+
   chunks.push(mkCode("python", data.combined_code));
 
   if (Array.isArray(data.events) && data.events.length > 0) {
@@ -355,6 +379,19 @@ function applyProviders(config) {
   handleProvider();
 }
 
+function applyRagConfig(config) {
+  const ragToggle = byId("ragToggle");
+  if (!ragToggle) {
+    return;
+  }
+  ragToggle.checked = Boolean(config.ragDefaultEnabled);
+  ragToggle.disabled = !config.ragAvailable;
+  syncRag();
+  if (!config.ragAvailable) {
+    addLog("Project RAG is unavailable for this deployment.");
+  }
+}
+
 async function requestJson(path, init = {}) {
   const response = await fetch(apiUrl(path), init);
   const contentType = response.headers.get("content-type") || "";
@@ -413,7 +450,8 @@ async function send() {
     validation_timeout: Number(valueOf("timeoutR", "5")),
     show_events: checkedOf("showEvents", false),
     json_mode: checkedOf("jsonToggle", false),
-    tracing: checkedOf("tracing", false)
+    tracing: checkedOf("tracing", false),
+    rag_enabled: checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled)
   };
 
   addUserMsg(prompt);
@@ -426,7 +464,7 @@ async function send() {
 
   setStat("running");
   resetPipe();
-  setPipe("generate_code");
+  setPipe(payload.rag_enabled ? "retrieve_context" : "generate_code");
   addLog(`Query: ${prompt.slice(0, 44)}${prompt.length > 44 ? "..." : ""}`);
 
   const tk = addThink();
@@ -466,6 +504,7 @@ async function boot() {
 
   updatePills();
   syncJson();
+  syncRag();
 
   try {
     const backendConfig = await requestJson("/api/config");
@@ -477,10 +516,13 @@ async function boot() {
       maxIterationsCap: backendConfig.max_iterations_cap,
       validationTimeoutCap: backendConfig.validation_timeout_cap,
       rateLimitRequests: backendConfig.rate_limit_requests,
-      rateLimitWindowSeconds: backendConfig.rate_limit_window_seconds
+      rateLimitWindowSeconds: backendConfig.rate_limit_window_seconds,
+      ragAvailable: backendConfig.rag_available,
+      ragDefaultEnabled: backendConfig.rag_default_enabled
     };
     setSliderCaps(APP_STATE.config);
     applyProviders(APP_STATE.config);
+    applyRagConfig(APP_STATE.config);
     addLog("Backend config loaded.");
     addLog(
       `Rate limit: ${APP_STATE.config.rateLimitRequests} request(s) per ${APP_STATE.config.rateLimitWindowSeconds}s.`
