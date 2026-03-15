@@ -12,12 +12,12 @@ services:
         value: 3.13.2
       - key: MISTRAL_API_KEY
         sync: false
-      - key: CODE_ASSISTANT_ALLOWED_ORIGINS
-        sync: false
       - key: CODE_ASSISTANT_ALLOWED_PROVIDERS
         value: mistral
       - key: CODE_ASSISTANT_DEFAULT_PROVIDER
         value: mistral
+      - key: CODE_ASSISTANT_REQUIRE_ACCESS_TOKEN
+        value: "false"
       - key: CODE_ASSISTANT_MAX_ITERATIONS_CAP
         value: "3"
       - key: CODE_ASSISTANT_VALIDATION_TIMEOUT_CAP
@@ -28,5 +28,3 @@ services:
         value: "300"
       - key: CODE_ASSISTANT_LOG_DESTINATION
         value: none
-      - key: CODE_ASSISTANT_ACCESS_TOKEN
-        sync: false

@@ -66,13 +66,19 @@ def get_settings() -> BackendSettings:
     if default_provider not in allowed_providers:
         default_provider = allowed_providers[0]
 
+    require_access_token = _bool_env("CODE_ASSISTANT_REQUIRE_ACCESS_TOKEN", False)
+
     return BackendSettings(
         project_root=project_root,
         public_dir=public_dir,
         allowed_origins=_split_csv(os.getenv("CODE_ASSISTANT_ALLOWED_ORIGINS")),
         allowed_providers=allowed_providers,
         default_provider=default_provider,
-        auth_token=os.getenv("CODE_ASSISTANT_ACCESS_TOKEN", "").strip(),
+        auth_token=(
+            os.getenv("CODE_ASSISTANT_ACCESS_TOKEN", "").strip()
+            if require_access_token
+            else ""
+        ),
         max_iterations_cap=_int_env("CODE_ASSISTANT_MAX_ITERATIONS_CAP", 3, minimum=1, maximum=10),
         validation_timeout_cap=_int_env("CODE_ASSISTANT_VALIDATION_TIMEOUT_CAP", 5, minimum=1, maximum=30),
         rate_limit_requests=_int_env("CODE_ASSISTANT_RATE_LIMIT_REQUESTS", 8, minimum=1, maximum=200),

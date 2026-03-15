@@ -1,15 +1,9 @@
 const DEFAULT_APP_CONFIG = {
-  apiBaseUrl: "",
   defaultProvider: "mistral",
   allowedProviders: ["mistral"],
   authRequired: false,
   maxIterationsCap: 3,
   validationTimeoutCap: 5
-};
-
-const STORAGE_KEYS = {
-  apiBaseUrl: "code-assistant-api-base",
-  accessToken: "code-assistant-access-token"
 };
 
 const APP_STATE = {
@@ -21,16 +15,7 @@ const APP_STATE = {
 };
 
 function apiUrl(path) {
-  const base = (APP_STATE.config.apiBaseUrl || "").trim().replace(/\/+$/, "");
-  return base ? `${base}${path}` : path;
-}
-
-function isLocalHost() {
-  return ["localhost", "127.0.0.1"].includes(window.location.hostname);
-}
-
-function hasBackendConfig() {
-  return Boolean((APP_STATE.config.apiBaseUrl || "").trim()) || isLocalHost();
+  return path;
 }
 
 function autoH(el) {
@@ -56,10 +41,6 @@ function esc(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function readAccessToken() {
-  return document.getElementById("accessToken").value.trim();
 }
 
 function handleProvider() {
@@ -337,25 +318,8 @@ function applyProviders(config) {
   handleProvider();
 }
 
-function saveDeploymentSettings() {
-  localStorage.setItem(STORAGE_KEYS.apiBaseUrl, document.getElementById("apiBase").value.trim());
-  localStorage.setItem(STORAGE_KEYS.accessToken, readAccessToken());
-}
-
-function authHeaders() {
-  const token = readAccessToken();
-  if (!token) {
-    return {};
-  }
-  return { Authorization: `Bearer ${token}` };
-}
-
 async function requestJson(path, init = {}) {
-  const headers = {
-    ...(init.headers || {}),
-    ...authHeaders()
-  };
-  const response = await fetch(apiUrl(path), { ...init, headers });
+  const response = await fetch(apiUrl(path), init);
   const contentType = response.headers.get("content-type") || "";
   const text = await response.text();
   let data = null;
@@ -369,14 +333,9 @@ async function requestJson(path, init = {}) {
       }
     } else {
       const looksLikeHtml = /^\s*</.test(text);
-      if (!hasBackendConfig() && looksLikeHtml) {
-        throw new Error(
-          "Backend API base URL is not configured. Add your deployed backend URL in the Deployment panel."
-        );
-      }
       throw new Error(
         looksLikeHtml
-          ? "The request reached a web page instead of the backend API. Check the backend URL in the Deployment panel."
+          ? "The app could not reach backend API routes on this same domain."
           : "The backend did not return JSON."
       );
     }
@@ -399,15 +358,8 @@ async function send() {
     return;
   }
 
-  if (!hasBackendConfig()) {
-    addErrMsg("Backend API base URL is not configured. Add your deployed backend URL in the Deployment panel first.");
-    addLog("Missing backend URL. Enter the backend API base URL, then try again.");
-    setStat("error");
-    return;
-  }
-
-  if (APP_STATE.config.authRequired && !readAccessToken()) {
-    addErrMsg("This deployment requires an access token. Add it in the Deployment panel first.");
+  if (APP_STATE.config.authRequired) {
+    addErrMsg("Backend token auth is enabled. This simplified UI does not ask end-users for tokens.");
     setStat("error");
     return;
   }
@@ -443,7 +395,6 @@ async function send() {
   const tk = addThink();
 
   try {
-    saveDeploymentSettings();
     const data = await requestJson("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -471,30 +422,10 @@ async function send() {
 }
 
 async function boot() {
-  const savedBase = localStorage.getItem(STORAGE_KEYS.apiBaseUrl);
-  const savedToken = localStorage.getItem(STORAGE_KEYS.accessToken);
-  const apiBaseInput = document.getElementById("apiBase");
-  const accessTokenInput = document.getElementById("accessToken");
-
-  apiBaseInput.value = savedBase !== null ? savedBase : (APP_STATE.config.apiBaseUrl || "");
-  accessTokenInput.value = savedToken || "";
-
-  apiBaseInput.addEventListener("change", () => {
-    APP_STATE.config.apiBaseUrl = apiBaseInput.value.trim();
-    saveDeploymentSettings();
-  });
-  accessTokenInput.addEventListener("change", saveDeploymentSettings);
   document.getElementById("localPath").addEventListener("input", updatePills);
 
-  APP_STATE.config.apiBaseUrl = apiBaseInput.value.trim();
   updatePills();
   syncJson();
-
-  if (!hasBackendConfig()) {
-    addLog("Backend API base URL is missing. Add your deployed backend URL in the Deployment panel.");
-    setStat("error");
-    return;
-  }
 
   try {
     const backendConfig = await requestJson("/api/config");
@@ -508,15 +439,19 @@ async function boot() {
       rateLimitRequests: backendConfig.rate_limit_requests,
       rateLimitWindowSeconds: backendConfig.rate_limit_window_seconds
     };
-    document.getElementById("tokenField").style.display = APP_STATE.config.authRequired ? "" : "none";
     setSliderCaps(APP_STATE.config);
     applyProviders(APP_STATE.config);
     addLog("Backend config loaded.");
     addLog(
       `Rate limit: ${APP_STATE.config.rateLimitRequests} request(s) per ${APP_STATE.config.rateLimitWindowSeconds}s.`
     );
+    if (APP_STATE.config.authRequired) {
+      addLog("Backend auth token is enabled. Disable CODE_ASSISTANT_ACCESS_TOKEN for this embedded UI.");
+      setStat("error");
+      return;
+    }
   } catch (err) {
-    addLog("Config check failed. Verify the backend URL in the Deployment panel.");
+    addLog("Config check failed. Ensure this app is served by the backend (same domain).");
     setStat("error");
     return;
   }

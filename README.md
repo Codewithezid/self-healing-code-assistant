@@ -5,7 +5,7 @@ A Python code assistant that uses LangGraph to generate code, validate it in an 
 The repository supports two ways to use it:
 
 - a local CLI for development and experiments
-- a split web deployment with a static frontend and a separate Python backend
+- a web app where backend and frontend are served together from one domain
 
 ## Highlights
 
@@ -13,7 +13,7 @@ The repository supports two ways to use it:
 - Validates generated code in a subprocess with a timeout
 - Retries failed generations up to a configurable limit
 - Exposes a FastAPI backend with auth, provider allowlists, request caps, CORS, and rate limiting
-- Ships a static frontend ready for Vercel-style hosting
+- Serves the bundled frontend from the same backend app
 
 ## Repository layout
 
@@ -64,11 +64,11 @@ Useful routes:
 
 ## Deployment
 
-The most practical low-cost production setup is:
+Recommended low-cost setup:
 
-1. Deploy `public/` to Vercel Hobby.
-2. Deploy the Python backend separately on a host that supports subprocess execution.
-3. Use Upstash Redis for shared rate limits and failure-log storage.
+1. Deploy this repo as one Python web service on Render (or similar).
+2. Keep frontend and API on the same domain (`/` and `/api/*`).
+3. Optionally add Upstash Redis for shared rate limits and failure-log storage.
 
 See `docs/DEPLOYMENT.md` for the full setup.
 

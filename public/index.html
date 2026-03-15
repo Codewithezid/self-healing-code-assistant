@@ -17,7 +17,7 @@
     <div class="wordmark">
       <span class="wordmark-title">Code Assistant</span>
       <span class="wordmark-sep">-</span>
-      <span class="wordmark-sub">LangGraph / Mistral</span>
+      <span class="wordmark-sub">Python</span>
     </div>
     <div class="topbar-right">
       <button class="tbtn" type="button" onclick="clearAll()">Clear chat</button>
@@ -28,26 +28,6 @@
 
   <div class="layout">
     <aside class="left-panel">
-      <div class="lp-section">
-        <div class="lp-label">Navigation</div>
-        <button class="nav-link active" type="button" onclick="activateNav(this)"><span class="nl-icon">></span> Chat</button>
-        <button class="nav-link" type="button" onclick="activateNav(this)"><span class="nl-icon">*</span> History</button>
-        <button class="nav-link" type="button" onclick="activateNav(this)"><span class="nl-icon">+</span> Fine-tune</button>
-        <button class="nav-link" type="button" onclick="activateNav(this)"><span class="nl-icon">?</span> Docs</button>
-      </div>
-
-      <div class="lp-section">
-        <div class="lp-label">Deployment</div>
-        <div class="field">
-          <label class="field-label" for="apiBase">Backend API base URL</label>
-          <input class="field-input" id="apiBase" type="text" value="" placeholder="https://your-backend.example.com" />
-        </div>
-        <div class="field" id="tokenField" style="display:none">
-          <label class="field-label" for="accessToken">Access token</label>
-          <input class="field-input" id="accessToken" type="password" value="" placeholder="Enter your private backend token" />
-        </div>
-      </div>
-
       <div class="lp-section">
         <div class="lp-label">Provider</div>
         <div class="field">
@@ -111,14 +91,11 @@
       <div class="chat-area" id="chatArea">
         <div id="welcome">
           <div class="welcome">
-            <div class="welcome-eyebrow">Split Deploy Ready</div>
-            <h1>Deploy the UI free, <em>keep code execution<br />on a safer backend.</em></h1>
+            <h1>Code Assistant</h1>
             <p class="welcome-body">
-              This frontend can live on Vercel Hobby for free. Point it at your separate Python backend,
-              then send coding prompts as usual.
+              Ask for Python code, run validation on your backend, and get a corrected result when needed.
             </p>
-            <hr class="welcome-divider" />
-            <p class="welcome-examples-label">Try one of these to start -</p>
+            <p class="welcome-examples-label">Quick prompts</p>
             <div class="examples-list">
               <button class="ex-btn" type="button" data-prompt="Write a function that returns the Fibonacci sequence up to n." onclick="fillExample(this)">
                 <span class="ex-arrow">^</span>
