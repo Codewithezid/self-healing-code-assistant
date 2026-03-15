@@ -104,7 +104,9 @@ class CodeAssistant:
                         "1) a short explanation, "
                         "2) the complete import block, "
                         "3) the executable code block. "
-                        "If the user asks for a demo, include one."
+                        "If the user asks for a demo, include one. "
+                        "The imports field must contain only valid Python import statements, "
+                        "comments, or be empty. Never write prose such as 'None required' in imports."
                     ),
                 ),
                 ("placeholder", "{messages}"),
@@ -130,6 +132,7 @@ class CodeAssistant:
                         'The JSON object must contain exactly these string keys: "prefix", '
                         '"imports", and "code". '
                         "The code value must be a single string containing the full executable code body. "
+                        "The imports value must contain only valid Python import statements, comments, or be empty. "
                         "Do not wrap the JSON in markdown fences."
                     ),
                 ),
@@ -137,6 +140,33 @@ class CodeAssistant:
             ]
         )
         return prompt, llm
+
+    @staticmethod
+    def _normalize_imports(imports: str) -> str:
+        normalized_lines: list[str] = []
+        for raw_line in imports.splitlines():
+            line = raw_line.strip()
+            if not line or line == "```" or line.lower() == "python":
+                continue
+            lowered = line.lower()
+            if lowered in {"none", "none required", "no imports", "no imports required"}:
+                continue
+            if any(phrase in lowered for phrase in ("none required", "no import", "not required")):
+                normalized_lines.append(f"# {line}")
+                continue
+            if line.startswith(("import ", "from ", "#")):
+                normalized_lines.append(line)
+                continue
+            normalized_lines.append(f"# {line}")
+        return "\n".join(normalized_lines).strip()
+
+    @classmethod
+    def _normalize_solution(cls, solution: CodeSolution) -> CodeSolution:
+        return CodeSolution(
+            prefix=solution.prefix.strip(),
+            imports=cls._normalize_imports(solution.imports),
+            code=solution.code.strip(),
+        )
 
     @staticmethod
     def _parse_fallback_response(content: Any) -> CodeSolution:
@@ -158,7 +188,7 @@ class CodeAssistant:
             if start == -1 or end == -1 or end <= start:
                 raise ValueError("Fallback response was not valid JSON.")
             payload = json.loads(text[start : end + 1])
-        return CodeSolution.model_validate(payload)
+        return CodeAssistant._normalize_solution(CodeSolution.model_validate(payload))
 
     def _build_graph(self):
         chain = self._build_chain()
@@ -207,7 +237,7 @@ class CodeAssistant:
             iterations = state["iterations"]
             events = state.get("events", [])
             try:
-                code_solution = chain.invoke({"messages": messages})
+                code_solution = self._normalize_solution(chain.invoke({"messages": messages}))
             except Exception:
                 if self.provider == "local" or fallback_prompt is None or fallback_llm is None:
                     raise
