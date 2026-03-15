@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://self-healing-code-assistant-backend.onrender.com/api/$1"
+    }
+  ]
+}
