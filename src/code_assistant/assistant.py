@@ -65,6 +65,10 @@ class CodeAssistant:
         rag_retrieval_k: int = 4,
         rag_chunk_size: int = 1200,
         rag_chunk_overlap: int = 200,
+        corrective_rag_enabled: bool = True,
+        corrective_rag_model: str = "mistral-small-latest",
+        corrective_rag_min_score: int = 3,
+        corrective_rag_retry_k: int = 6,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
@@ -90,6 +94,10 @@ class CodeAssistant:
                 chunk_size=rag_chunk_size,
                 chunk_overlap=rag_chunk_overlap,
                 auto_index=rag_auto_index,
+                corrective_enabled=corrective_rag_enabled,
+                corrective_model=corrective_rag_model,
+                corrective_min_score=corrective_rag_min_score,
+                corrective_retry_k=corrective_rag_retry_k,
             )
             if rag_enabled
             else None

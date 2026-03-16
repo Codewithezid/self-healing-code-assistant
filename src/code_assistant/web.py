@@ -227,6 +227,10 @@ def create_app() -> FastAPI:
                 rag_retrieval_k=settings.rag_retrieval_k,
                 rag_chunk_size=settings.rag_chunk_size,
                 rag_chunk_overlap=settings.rag_chunk_overlap,
+                corrective_rag_enabled=settings.corrective_rag_enabled,
+                corrective_rag_model=settings.corrective_rag_model,
+                corrective_rag_min_score=settings.corrective_rag_min_score,
+                corrective_rag_retry_k=settings.corrective_rag_retry_k,
             )
             result = assistant.run(request_body.prompt, thread_id=thread_id)
         except RuntimeError as exc:

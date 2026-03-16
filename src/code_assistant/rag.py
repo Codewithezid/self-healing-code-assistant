@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from langchain_core.documents import Document
-from langchain_mistralai import MistralAIEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_mistralai import ChatMistralAI, MistralAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
+from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 
 DEFAULT_INCLUDE_PATTERNS = (
@@ -35,6 +38,8 @@ DEFAULT_EXCLUDED_PARTS = {
     "data/runtime",
 }
 
+QDRANT_LOCAL_LOCK = threading.RLock()
+
 
 @dataclass(frozen=True)
 class RetrievalBundle:
@@ -43,6 +48,14 @@ class RetrievalBundle:
     chunks: int
     indexed_now: bool = False
     detail: str = ""
+    retrieval_query: str = ""
+
+
+class CorrectiveRAGDecision(BaseModel):
+    score: int = Field(ge=1, le=5)
+    verdict: str = Field(description="Short retrieval quality verdict.")
+    should_retry: bool = Field(description="Whether retrieval should be retried with a rewritten query.")
+    rewritten_query: str = Field(default="", description="Improved retrieval query when retrying is helpful.")
 
 
 class ProjectRAG:
@@ -59,6 +72,10 @@ class ProjectRAG:
         chunk_size: int = 1200,
         chunk_overlap: int = 200,
         auto_index: bool = False,
+        corrective_enabled: bool = False,
+        corrective_model: str = "mistral-small-latest",
+        corrective_min_score: int = 3,
+        corrective_retry_k: int = 6,
         include_patterns: tuple[str, ...] = DEFAULT_INCLUDE_PATTERNS,
     ) -> None:
         self.project_root = Path(project_root).resolve()
@@ -69,32 +86,37 @@ class ProjectRAG:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.auto_index = auto_index
+        self.corrective_enabled = corrective_enabled
+        self.corrective_model = corrective_model
+        self.corrective_min_score = corrective_min_score
+        self.corrective_retry_k = corrective_retry_k
         self.include_patterns = include_patterns
+        self._corrective_chain = self._build_corrective_chain() if corrective_enabled else None
 
     def index_project(self, *, force: bool = True) -> dict[str, int]:
         documents, file_count = self._build_documents()
         if not documents:
             return {"files": 0, "chunks": 0}
 
-        if force:
-            client = self._create_client()
+        with QDRANT_LOCAL_LOCK:
+            if force:
+                client = self._create_client()
+                try:
+                    if client.collection_exists(self.collection_name):
+                        client.delete_collection(self.collection_name)
+                finally:
+                    client.close()
+            store = QdrantVectorStore.from_documents(
+                documents,
+                embedding=self._build_embeddings(),
+                path=str(self.qdrant_path),
+                collection_name=self.collection_name,
+            )
             try:
-                if client.collection_exists(self.collection_name):
-                    client.delete_collection(self.collection_name)
+                return {"files": file_count, "chunks": len(documents)}
             finally:
-                client.close()
-
-        store = QdrantVectorStore.from_documents(
-            documents,
-            embedding=self._build_embeddings(),
-            path=str(self.qdrant_path),
-            collection_name=self.collection_name,
-        )
-        try:
-            return {"files": file_count, "chunks": len(documents)}
-        finally:
-            if hasattr(store, "client"):
-                store.client.close()
+                if hasattr(store, "client"):
+                    store.client.close()
 
     def retrieve(self, query: str) -> RetrievalBundle:
         if not query.strip():
@@ -128,21 +150,52 @@ class ProjectRAG:
                     detail="RAG indexing ran, but no eligible project files were found.",
                 )
 
-        client = self._create_client()
-        try:
-            store = QdrantVectorStore(
-                client=client,
-                collection_name=self.collection_name,
-                embedding=self._build_embeddings(),
-            )
-            documents = store.similarity_search(query, k=self.retrieval_k)
-        finally:
-            client.close()
+        documents = self._similarity_search(query, k=self.retrieval_k)
 
         unique_sources: list[str] = []
         seen_sources: set[str] = set()
         source_rows: list[dict[str, str]] = []
         context_parts: list[str] = []
+        active_query = query
+        detail = "RAG retrieval ran, but no relevant project chunks were found."
+
+        if not documents and self.corrective_enabled:
+            retry_query = self._fallback_rewrite(query)
+            retried_documents = self._similarity_search(
+                retry_query,
+                k=max(self.retrieval_k, self.corrective_retry_k),
+            )
+            if retried_documents:
+                documents = retried_documents
+                active_query = retry_query
+                detail = "Corrective RAG retried retrieval after an empty initial result."
+
+        if documents and self.corrective_enabled and self._corrective_chain is not None:
+            decision = self._grade_retrieval(query, documents)
+            if decision is not None and (
+                decision.score < self.corrective_min_score or decision.should_retry
+            ):
+                retry_query = decision.rewritten_query.strip() or self._fallback_rewrite(query)
+                retried_documents = self._similarity_search(
+                    retry_query,
+                    k=max(self.retrieval_k, self.corrective_retry_k),
+                )
+                retried_decision = self._grade_retrieval(query, retried_documents)
+                if retried_documents and self._should_use_retry(decision, retried_decision):
+                    documents = retried_documents
+                    active_query = retry_query
+                    if retried_decision is not None:
+                        detail = (
+                            f"Corrective RAG retried retrieval with a rewritten query and "
+                            f"accepted the result at score {retried_decision.score}/5."
+                        )
+                    else:
+                        detail = "Corrective RAG retried retrieval with a rewritten query."
+                else:
+                    detail = (
+                        f"Corrective RAG kept the original retrieval after grading it at "
+                        f"score {decision.score}/5."
+                    )
 
         for index, document in enumerate(documents, start=1):
             source = str(document.metadata.get("source", "unknown"))
@@ -163,27 +216,114 @@ class ProjectRAG:
                 sources=[],
                 chunks=0,
                 indexed_now=indexed_now,
-                detail="RAG retrieval ran, but no relevant project chunks were found.",
+                detail=detail,
+                retrieval_query=active_query,
             )
 
-        detail_prefix = "Indexed project files and " if indexed_now else ""
+        if detail == "RAG retrieval ran, but no relevant project chunks were found.":
+            detail_prefix = "Indexed project files and " if indexed_now else ""
+            detail = (
+                f"{detail_prefix}retrieved {len(context_parts)} chunk(s) "
+                f"from {len(unique_sources)} file(s)."
+            )
         return RetrievalBundle(
             context="\n\n".join(context_parts),
             sources=source_rows,
             chunks=len(context_parts),
             indexed_now=indexed_now,
-            detail=(
-                f"{detail_prefix}retrieved {len(context_parts)} chunk(s) "
-                f"from {len(unique_sources)} file(s)."
-            ),
+            detail=detail,
+            retrieval_query=active_query,
         )
 
-    def _collection_exists(self) -> bool:
-        client = self._create_client()
+    def _build_corrective_chain(self):
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    (
+                        "You are grading retrieval quality for a codebase-aware assistant. "
+                        "Score the retrieved context from 1 to 5 against the user's original query. "
+                        "If the retrieval is weak, produce a better search query focused on filenames, "
+                        "symbols, endpoints, environment variables, and implementation keywords. "
+                        "Prefer keeping the original retrieval when it is already strong."
+                    ),
+                ),
+                (
+                    "human",
+                    (
+                        "Original query:\n{query}\n\n"
+                        "Retrieved context preview:\n{context_preview}\n\n"
+                        "Return whether retrieval should be retried."
+                    ),
+                ),
+            ]
+        )
+        llm = ChatMistralAI(
+            model=self.corrective_model,
+            temperature=0.0,
+        )
+        return prompt | llm.with_structured_output(CorrectiveRAGDecision)
+
+    def _grade_retrieval(
+        self,
+        query: str,
+        documents: list[Document],
+    ) -> CorrectiveRAGDecision | None:
+        if not documents or self._corrective_chain is None:
+            return None
         try:
-            return client.collection_exists(self.collection_name)
-        finally:
-            client.close()
+            context_preview = "\n\n".join(
+                f"Source: {doc.metadata.get('source', 'unknown')}\n{doc.page_content[:700].strip()}"
+                for doc in documents[:3]
+            )
+            return self._corrective_chain.invoke(
+                {"query": query, "context_preview": context_preview}
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _should_use_retry(
+        initial: CorrectiveRAGDecision | None,
+        retried: CorrectiveRAGDecision | None,
+    ) -> bool:
+        if retried is None:
+            return False
+        if initial is None:
+            return True
+        return retried.score >= initial.score
+
+    @staticmethod
+    def _fallback_rewrite(query: str) -> str:
+        normalized = query.strip()
+        if not normalized:
+            return normalized
+        return (
+            f"{normalized}\n"
+            "Focus on project files, Python implementation details, FastAPI routes, "
+            "settings, request models, and runtime validation."
+        )
+
+    def _similarity_search(self, query: str, *, k: int) -> list[Document]:
+        with QDRANT_LOCAL_LOCK:
+            client = self._create_client()
+            try:
+                store = QdrantVectorStore(
+                    client=client,
+                    collection_name=self.collection_name,
+                    embedding=self._build_embeddings(),
+                )
+                return store.similarity_search(query, k=k)
+            finally:
+                client.close()
+
+    def _collection_exists(self) -> bool:
+        with QDRANT_LOCAL_LOCK:
+            client = self._create_client()
+            try:
+                return client.collection_exists(self.collection_name)
+            finally:
+                client.close()
 
     def _create_client(self) -> QdrantClient:
         self.qdrant_path.mkdir(parents=True, exist_ok=True)

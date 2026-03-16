@@ -60,6 +60,10 @@ class BackendSettings:
     rag_retrieval_k: int
     rag_chunk_size: int
     rag_chunk_overlap: int
+    corrective_rag_enabled: bool
+    corrective_rag_model: str
+    corrective_rag_min_score: int
+    corrective_rag_retry_k: int
 
 
 @lru_cache(maxsize=1)
@@ -105,4 +109,8 @@ def get_settings() -> BackendSettings:
         rag_retrieval_k=_int_env("CODE_ASSISTANT_RAG_RETRIEVAL_K", 4, minimum=1, maximum=12),
         rag_chunk_size=_int_env("CODE_ASSISTANT_RAG_CHUNK_SIZE", 1200, minimum=200, maximum=4000),
         rag_chunk_overlap=_int_env("CODE_ASSISTANT_RAG_CHUNK_OVERLAP", 200, minimum=0, maximum=1000),
+        corrective_rag_enabled=_bool_env("CODE_ASSISTANT_CORRECTIVE_RAG_ENABLED", True),
+        corrective_rag_model=os.getenv("CODE_ASSISTANT_CORRECTIVE_RAG_MODEL", "mistral-small-latest").strip() or "mistral-small-latest",
+        corrective_rag_min_score=_int_env("CODE_ASSISTANT_CORRECTIVE_RAG_MIN_SCORE", 3, minimum=1, maximum=5),
+        corrective_rag_retry_k=_int_env("CODE_ASSISTANT_CORRECTIVE_RAG_RETRY_K", 6, minimum=1, maximum=12),
     )
