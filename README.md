@@ -54,6 +54,18 @@ Recommended Python version: `3.12` or `3.13`.
 
 ## Run locally
 
+Fastest (single command):
+
+```powershell
+.\run_project.cmd
+```
+
+If port `8000` is already in use:
+
+```powershell
+.\run_project.cmd -ForceRestart
+```
+
 CLI:
 
 ```powershell
@@ -132,3 +144,7 @@ Run the built-in audit suite:
 python scripts/audit_project.py
 python scripts/complex_benchmark.py
 ```
+
+## Contributing
+
+See `CONTRIBUTING.md` for local workflow and pre-PR checks.
