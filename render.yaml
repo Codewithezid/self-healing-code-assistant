@@ -28,3 +28,7 @@ services:
         value: "300"
       - key: CODE_ASSISTANT_LOG_DESTINATION
         value: none
+      - key: CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE
+        value: balanced
+      - key: CODE_ASSISTANT_SANDBOX_CMD
+        value: ""

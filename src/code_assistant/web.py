@@ -259,6 +259,7 @@ def create_app() -> FastAPI:
                 corrective_rag_min_score=settings.corrective_rag_min_score,
                 corrective_rag_retry_k=settings.corrective_rag_retry_k,
                 runtime_profile=runtime_profile,
+                sandbox_cmd=settings.sandbox_cmd,
             )
             result = assistant.run(request_body.prompt, thread_id=thread_id)
         except RuntimeError as exc:

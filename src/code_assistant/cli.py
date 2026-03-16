@@ -6,6 +6,7 @@ from typing import Any
 
 from .assistant import CodeAssistant, CodeSolution
 from .profiles import get_runtime_profile
+from .sandbox_utils import parse_sandbox_cmd
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -71,6 +72,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Build the local Qdrant index automatically if it does not exist.",
     )
+    parser.add_argument(
+        "--sandbox-cmd",
+        default="",
+        help="Optional sandbox command prefix for validation (e.g., 'firejail --quiet').",
+    )
     return parser
 
 
@@ -107,6 +113,7 @@ def main() -> int:
             rag_auto_index=args.rag_auto_index,
             runtime_profile=args.runtime_profile,
             corrective_rag_mode=(profile.corrective_rag_mode if profile is not None else "balanced"),
+            sandbox_cmd=(parse_sandbox_cmd(args.sandbox_cmd) if args.sandbox_cmd.strip() else None),
         )
     except RuntimeError as exc:
         print(f"Configuration error: {exc}")

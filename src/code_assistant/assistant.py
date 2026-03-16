@@ -71,6 +71,7 @@ class CodeAssistant:
         corrective_rag_min_score: int = 3,
         corrective_rag_retry_k: int = 6,
         runtime_profile: str = "custom",
+        sandbox_cmd: list[str] | tuple[str, ...] | None = None,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
@@ -85,6 +86,7 @@ class CodeAssistant:
         self.failure_log_key = failure_log_key
         self.provider = provider
         self.runtime_profile = runtime_profile
+        self.sandbox_cmd = list(sandbox_cmd) if sandbox_cmd else []
         self.local_model_name = local_model_name
         self.local_max_new_tokens = local_max_new_tokens
         self.rag = (
@@ -267,8 +269,11 @@ class CodeAssistant:
                 with open(script_path, "w", encoding="utf-8") as handle:
                     handle.write(snippet)
                 try:
+                    cmd = [sys.executable, "-I", script_path]
+                    if self.sandbox_cmd:
+                        cmd = [*self.sandbox_cmd, sys.executable, "-I", script_path]
                     completed = subprocess.run(
-                        [sys.executable, "-I", script_path],
+                        cmd,
                         cwd=temp_dir,
                         capture_output=True,
                         text=True,
@@ -280,6 +285,11 @@ class CodeAssistant:
                     return (
                         False,
                         f"Validation timed out after {self.validation_timeout_seconds} seconds.",
+                    )
+                except OSError as exc:
+                    return (
+                        False,
+                        f"Validation sandbox failed to start: {exc}",
                     )
 
             if completed.returncode != 0:

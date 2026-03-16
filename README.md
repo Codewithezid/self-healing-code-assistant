@@ -16,6 +16,7 @@ The repository supports two ways to use it:
 - Supports runtime profiles for fast, balanced, and accuracy-focused runs
 - Classifies failed runs so retrieval, import, timeout, and runtime errors are easier to debug
 - Writes structured benchmark reports for accuracy and latency tracking
+- Optional sandbox prefix for code validation (e.g., firejail/nsjail) for safer execution
 - Exposes a FastAPI backend with auth, provider allowlists, request caps, CORS, and rate limiting
 - Serves the bundled frontend from the same backend app
 
@@ -89,6 +90,7 @@ Optional RAG environment flags:
 - `CODE_ASSISTANT_CORRECTIVE_RAG_MODEL=mistral-small-latest`
 - `CODE_ASSISTANT_CORRECTIVE_RAG_MODE=balanced`
 - `CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE=custom`
+- `CODE_ASSISTANT_SANDBOX_CMD=` (optional, e.g., `firejail --quiet --private`; on Windows quote paths with spaces)
 
 Named runtime profiles:
 
@@ -100,6 +102,12 @@ Generate a structured benchmark report:
 
 ```powershell
 python scripts/benchmark_report.py --runtime-profile balanced
+```
+
+Run offline audit (CI-friendly):
+
+```powershell
+python scripts/audit_project.py
 ```
 
 ## Deployment

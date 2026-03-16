@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from .sandbox_utils import parse_sandbox_cmd
+
 
 def _split_csv(value: str | None, *, default: tuple[str, ...] = ()) -> tuple[str, ...]:
     if not value:
@@ -66,6 +68,7 @@ class BackendSettings:
     corrective_rag_mode: str
     corrective_rag_min_score: int
     corrective_rag_retry_k: int
+    sandbox_cmd: tuple[str, ...]
 
 
 @lru_cache(maxsize=1)
@@ -85,6 +88,7 @@ def get_settings() -> BackendSettings:
     corrective_rag_mode = os.getenv("CODE_ASSISTANT_CORRECTIVE_RAG_MODE", "balanced").strip().lower() or "balanced"
     if corrective_rag_mode not in {"fast", "balanced", "aggressive"}:
         corrective_rag_mode = "balanced"
+    sandbox_cmd = parse_sandbox_cmd(os.getenv("CODE_ASSISTANT_SANDBOX_CMD", ""))
 
     require_access_token = _bool_env("CODE_ASSISTANT_REQUIRE_ACCESS_TOKEN", False)
 
@@ -123,4 +127,5 @@ def get_settings() -> BackendSettings:
         corrective_rag_mode=corrective_rag_mode,
         corrective_rag_min_score=_int_env("CODE_ASSISTANT_CORRECTIVE_RAG_MIN_SCORE", 3, minimum=1, maximum=5),
         corrective_rag_retry_k=_int_env("CODE_ASSISTANT_CORRECTIVE_RAG_RETRY_K", 6, minimum=1, maximum=12),
+        sandbox_cmd=sandbox_cmd,
     )
