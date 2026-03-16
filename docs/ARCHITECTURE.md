@@ -47,9 +47,10 @@ Files:
 Responsibilities:
 
 - collect prompt and runtime options
+- expose runtime profiles without changing the underlying graph
 - fetch backend capabilities from `/api/config`
 - enforce deployment-driven frontend behavior such as hidden providers
-- render solution text, code, and validation events
+- render solution text, code, validation events, and failure diagnostics
 
 ### Backend API
 
@@ -63,6 +64,7 @@ Responsibilities:
 - enforce access-token authentication when configured
 - apply CORS rules for allowed frontend origins
 - enforce provider allowlists, iteration caps, timeout caps, and rate limits
+- resolve named runtime profiles into safe backend defaults
 - invoke `CodeAssistant` and normalize the response for the frontend
 
 ### Assistant workflow
@@ -81,6 +83,7 @@ Responsibilities:
 - run the LangGraph state machine
 - validate imports and code in an isolated subprocess
 - retry with corrective feedback until success or retry exhaustion
+- classify failed runs without changing the main retry pipeline
 - emit structured execution events for the UI
 
 ### Deployment settings
@@ -90,10 +93,12 @@ Files:
 - `src/code_assistant/settings.py`
 - `src/code_assistant/platform_utils.py`
 - `src/code_assistant/logging_utils.py`
+- `src/code_assistant/profiles.py`
 
 Responsibilities:
 
 - load backend configuration from environment variables
+- expose reusable runtime presets for CLI, API, and frontend calls
 - implement local or Upstash-backed rate limiting
 - route failure logging to file storage, Upstash, or no-op mode
 

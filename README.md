@@ -13,6 +13,9 @@ The repository supports two ways to use it:
 - Validates generated code in a subprocess with a timeout
 - Retries failed generations up to a configurable limit
 - Optionally retrieves project-aware context from a local Qdrant RAG index
+- Supports runtime profiles for fast, balanced, and accuracy-focused runs
+- Classifies failed runs so retrieval, import, timeout, and runtime errors are easier to debug
+- Writes structured benchmark reports for accuracy and latency tracking
 - Exposes a FastAPI backend with auth, provider allowlists, request caps, CORS, and rate limiting
 - Serves the bundled frontend from the same backend app
 
@@ -85,6 +88,19 @@ Optional RAG environment flags:
 - `CODE_ASSISTANT_CORRECTIVE_RAG_ENABLED=true`
 - `CODE_ASSISTANT_CORRECTIVE_RAG_MODEL=mistral-small-latest`
 - `CODE_ASSISTANT_CORRECTIVE_RAG_MODE=balanced`
+- `CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE=custom`
+
+Named runtime profiles:
+
+- `fast`
+- `balanced`
+- `accurate`
+
+Generate a structured benchmark report:
+
+```powershell
+python scripts/benchmark_report.py --runtime-profile balanced
+```
 
 ## Deployment
 

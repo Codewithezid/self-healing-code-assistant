@@ -7,5 +7,7 @@ window.APP_CONFIG = window.APP_CONFIG || {
   ragAvailable: true,
   ragDefaultEnabled: false,
   correctiveRagModes: ["fast", "balanced", "aggressive"],
-  correctiveRagDefaultMode: "balanced"
+  correctiveRagDefaultMode: "balanced",
+  runtimeProfiles: ["custom", "fast", "balanced", "accurate"],
+  defaultRuntimeProfile: "custom"
 };

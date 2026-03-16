@@ -41,6 +41,7 @@ class BackendSettings:
     allowed_origins: tuple[str, ...]
     allowed_providers: tuple[str, ...]
     default_provider: str
+    default_runtime_profile: str
     auth_token: str
     max_iterations_cap: int
     validation_timeout_cap: int
@@ -78,6 +79,9 @@ def get_settings() -> BackendSettings:
     default_provider = os.getenv("CODE_ASSISTANT_DEFAULT_PROVIDER", allowed_providers[0]).strip() or allowed_providers[0]
     if default_provider not in allowed_providers:
         default_provider = allowed_providers[0]
+    default_runtime_profile = os.getenv("CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE", "custom").strip().lower() or "custom"
+    if default_runtime_profile not in {"custom", "fast", "balanced", "accurate"}:
+        default_runtime_profile = "custom"
     corrective_rag_mode = os.getenv("CODE_ASSISTANT_CORRECTIVE_RAG_MODE", "balanced").strip().lower() or "balanced"
     if corrective_rag_mode not in {"fast", "balanced", "aggressive"}:
         corrective_rag_mode = "balanced"
@@ -90,6 +94,7 @@ def get_settings() -> BackendSettings:
         allowed_origins=_split_csv(os.getenv("CODE_ASSISTANT_ALLOWED_ORIGINS")),
         allowed_providers=allowed_providers,
         default_provider=default_provider,
+        default_runtime_profile=default_runtime_profile,
         auth_token=(
             os.getenv("CODE_ASSISTANT_ACCESS_TOKEN", "").strip()
             if require_access_token

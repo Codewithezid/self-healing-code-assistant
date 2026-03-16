@@ -7,11 +7,14 @@ const DEFAULT_APP_CONFIG = {
   ragAvailable: true,
   ragDefaultEnabled: false,
   correctiveRagModes: ["fast", "balanced", "aggressive"],
-  correctiveRagDefaultMode: "balanced"
+  correctiveRagDefaultMode: "balanced",
+  runtimeProfiles: ["custom", "fast", "balanced", "accurate"],
+  defaultRuntimeProfile: "custom"
 };
 
 const APP_STATE = {
   running: false,
+  applyingProfile: false,
   qCount: 0,
   tkN: 0,
   jMode: false,
@@ -62,7 +65,10 @@ function esc(value) {
     .replace(/"/g, "&quot;");
 }
 
-function handleProvider() {
+function handleProvider(preserveProfile = false) {
+  if (!preserveProfile) {
+    markRuntimeProfileCustom();
+  }
   const provider = valueOf("providerSel", "mistral");
   const modelField = byId("modelField");
   const localField = byId("localField");
@@ -79,6 +85,16 @@ function handleProvider() {
   updatePills();
 }
 
+function markRuntimeProfileCustom() {
+  if (APP_STATE.applyingProfile) {
+    return;
+  }
+  const runtimeProfile = byId("runtimeProfile");
+  if (runtimeProfile && runtimeProfile.value !== "custom") {
+    runtimeProfile.value = "custom";
+  }
+}
+
 function updatePills() {
   const provider = valueOf("providerSel", "mistral");
   const model = provider === "mistral"
@@ -86,8 +102,12 @@ function updatePills() {
     : valueOf("localPath", "Qwen/Qwen2.5-Coder-0.5B-Instruct").split("/").pop();
   const modelPill = byId("pm");
   const retryPill = byId("pi");
+  const profilePill = byId("pf");
   if (modelPill) {
     modelPill.textContent = model || "local-model";
+  }
+  if (profilePill) {
+    profilePill.textContent = valueOf("runtimeProfile", APP_STATE.config.defaultRuntimeProfile);
   }
   if (retryPill) {
     retryPill.textContent = valueOf("maxIter", "3") + " retries";
@@ -124,7 +144,10 @@ function syncJson() {
   }
 }
 
-function syncRag() {
+function syncRag(preserveProfile = false) {
+  if (!preserveProfile) {
+    markRuntimeProfileCustom();
+  }
   APP_STATE.ragMode = checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled);
   const ragPill = byId("pr");
   if (ragPill) {
@@ -137,8 +160,51 @@ function syncRag() {
   updatePills();
 }
 
-function syncCorrectiveRagMode() {
+function syncCorrectiveRagMode(preserveProfile = false) {
+  if (!preserveProfile) {
+    markRuntimeProfileCustom();
+  }
   updatePills();
+}
+
+function applyRuntimeProfile() {
+  const profile = valueOf("runtimeProfile", APP_STATE.config.defaultRuntimeProfile);
+  APP_STATE.applyingProfile = true;
+  try {
+    if (profile === "fast") {
+      byId("providerSel").value = "mistral";
+      byId("modelSel").value = "codestral-latest";
+      byId("maxIter").value = "1";
+      byId("iN").textContent = "1";
+      byId("timeoutR").value = "3";
+      byId("tN").textContent = "3";
+      byId("ragToggle").checked = false;
+      byId("correctiveRagMode").value = "fast";
+    } else if (profile === "balanced") {
+      byId("providerSel").value = "mistral";
+      byId("modelSel").value = "mistral-large-latest";
+      byId("maxIter").value = "2";
+      byId("iN").textContent = "2";
+      byId("timeoutR").value = "5";
+      byId("tN").textContent = "5";
+      byId("ragToggle").checked = true;
+      byId("correctiveRagMode").value = "balanced";
+    } else if (profile === "accurate") {
+      byId("providerSel").value = "mistral";
+      byId("modelSel").value = "mistral-large-latest";
+      byId("maxIter").value = "3";
+      byId("iN").textContent = "3";
+      byId("timeoutR").value = "5";
+      byId("tN").textContent = "5";
+      byId("ragToggle").checked = true;
+      byId("correctiveRagMode").value = "aggressive";
+    }
+  } finally {
+    APP_STATE.applyingProfile = false;
+  }
+  handleProvider(true);
+  syncRag(true);
+  syncCorrectiveRagMode(true);
 }
 
 function clearAll() {
@@ -313,6 +379,9 @@ function renderAssistantBody(data) {
   if (data.validation_message) {
     chunks.push(`<p>${esc(data.validation_message)}</p>`);
   }
+  if (data.runtime_profile) {
+    chunks.push(`<p><span class="inline-code">profile</span> ${esc(data.runtime_profile)}</p>`);
+  }
 
   if (data.rag_enabled) {
     const sources = Array.isArray(data.rag_sources) ? data.rag_sources : [];
@@ -322,6 +391,12 @@ function renderAssistantBody(data) {
     } else {
       chunks.push("<p><span class=\"inline-code\">rag</span> Enabled, but no project files were retrieved for this request.</p>");
     }
+  }
+
+  if (data.failure_diagnostics && data.failure_diagnostics.category && data.failure_diagnostics.category !== "none") {
+    chunks.push(
+      `<p><span class="inline-code">failure</span> ${esc(data.failure_diagnostics.category)} at ${esc(data.failure_diagnostics.stage)} - ${esc(data.failure_diagnostics.summary || "")}</p>`
+    );
   }
 
   chunks.push(mkCode("python", data.combined_code));
@@ -399,8 +474,18 @@ function applyProviders(config) {
 function applyRagConfig(config) {
   const ragToggle = byId("ragToggle");
   const correctiveMode = byId("correctiveRagMode");
+  const runtimeProfile = byId("runtimeProfile");
   if (!ragToggle) {
     return;
+  }
+  if (runtimeProfile) {
+    const profiles = Array.isArray(config.runtimeProfiles) && config.runtimeProfiles.length > 0
+      ? config.runtimeProfiles
+      : ["custom", "fast", "balanced", "accurate"];
+    runtimeProfile.innerHTML = profiles
+      .map((profile) => `<option value="${esc(profile)}">${esc(profile)}</option>`)
+      .join("");
+    runtimeProfile.value = config.defaultRuntimeProfile || "custom";
   }
   ragToggle.checked = Boolean(config.ragDefaultEnabled);
   if (correctiveMode) {
@@ -414,7 +499,12 @@ function applyRagConfig(config) {
     correctiveMode.disabled = !config.ragAvailable;
   }
   ragToggle.disabled = !config.ragAvailable;
-  syncRag();
+  if ((config.defaultRuntimeProfile || "custom") !== "custom") {
+    applyRuntimeProfile();
+  } else {
+    syncRag(true);
+    updatePills();
+  }
   if (!config.ragAvailable) {
     addLog("Project RAG is unavailable for this deployment.");
   }
@@ -480,7 +570,8 @@ async function send() {
     json_mode: checkedOf("jsonToggle", false),
     tracing: checkedOf("tracing", false),
     rag_enabled: checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled),
-    corrective_rag_mode: valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode)
+    corrective_rag_mode: valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode),
+    runtime_profile: valueOf("runtimeProfile", APP_STATE.config.defaultRuntimeProfile)
   };
 
   addUserMsg(prompt);
@@ -528,7 +619,10 @@ async function send() {
 async function boot() {
   const localPath = byId("localPath");
   if (localPath) {
-    localPath.addEventListener("input", updatePills);
+    localPath.addEventListener("input", () => {
+      markRuntimeProfileCustom();
+      updatePills();
+    });
   }
 
   updatePills();
@@ -549,11 +643,14 @@ async function boot() {
       ragAvailable: backendConfig.rag_available,
       ragDefaultEnabled: backendConfig.rag_default_enabled,
       correctiveRagModes: backendConfig.corrective_rag_modes,
-      correctiveRagDefaultMode: backendConfig.corrective_rag_default_mode
+      correctiveRagDefaultMode: backendConfig.corrective_rag_default_mode,
+      runtimeProfiles: backendConfig.runtime_profiles,
+      defaultRuntimeProfile: backendConfig.default_runtime_profile
     };
     setSliderCaps(APP_STATE.config);
     applyProviders(APP_STATE.config);
     applyRagConfig(APP_STATE.config);
+    updatePills();
     addLog("Backend config loaded.");
     addLog(
       `Rate limit: ${APP_STATE.config.rateLimitRequests} request(s) per ${APP_STATE.config.rateLimitWindowSeconds}s.`

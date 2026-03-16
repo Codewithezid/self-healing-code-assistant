@@ -19,7 +19,7 @@ from langgraph.graph.message import add_messages
 
 from .logging_utils import append_failure_record, utc_now_iso
 from .local_backend import LocalCodeGenerator
-from .models import CodeSolution
+from .models import CodeSolution, FailureDiagnostics
 from .rag import ProjectRAG
 
 load_dotenv()
@@ -70,6 +70,7 @@ class CodeAssistant:
         corrective_rag_mode: str = "balanced",
         corrective_rag_min_score: int = 3,
         corrective_rag_retry_k: int = 6,
+        runtime_profile: str = "custom",
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
@@ -83,6 +84,7 @@ class CodeAssistant:
         self.upstash_redis_rest_token = upstash_redis_rest_token
         self.failure_log_key = failure_log_key
         self.provider = provider
+        self.runtime_profile = runtime_profile
         self.local_model_name = local_model_name
         self.local_max_new_tokens = local_max_new_tokens
         self.rag = (
@@ -578,6 +580,50 @@ class CodeAssistant:
             f"Code:\n{solution.code}\n"
         )
 
+    @staticmethod
+    def classify_failure(result: dict[str, Any]) -> FailureDiagnostics:
+        if result.get("error") != "yes":
+            return FailureDiagnostics(category="none", stage="none", summary="")
+
+        events = result.get("events", [])
+        for event in events:
+            if event.get("stage") == "retrieve_context" and event.get("status") == "error":
+                detail = str(event.get("detail", "")).strip()
+                return FailureDiagnostics(
+                    category="retrieval_error",
+                    stage="retrieve_context",
+                    summary=detail or "Project retrieval failed before generation.",
+                )
+
+        for event in reversed(events):
+            detail = str(event.get("detail", "")).strip()
+            stage = str(event.get("stage", "")).strip() or "unknown"
+            if "Import validation failed:" in detail or "Import execution failed" in detail:
+                return FailureDiagnostics(
+                    category="import_validation_error",
+                    stage=stage,
+                    summary=detail,
+                )
+            if "Runtime validation failed:" in detail:
+                return FailureDiagnostics(
+                    category="runtime_validation_error",
+                    stage=stage,
+                    summary=detail,
+                )
+            if "timed out" in detail.lower():
+                return FailureDiagnostics(
+                    category="timeout",
+                    stage=stage,
+                    summary=detail,
+                )
+
+        iterations = int(result.get("iterations", 0) or 0)
+        return FailureDiagnostics(
+            category="retry_limit_reached",
+            stage="retry_or_end",
+            summary=f"The assistant stopped after {iterations} iteration(s) without a validated solution.",
+        )
+
     def _log_failure_if_needed(
         self,
         question: str,
@@ -593,9 +639,11 @@ class CodeAssistant:
             "thread_id": thread_id,
             "model_name": self.model_name,
             "provider": self.provider,
+            "runtime_profile": self.runtime_profile,
             "question": question,
             "iterations": result.get("iterations"),
             "error": result.get("error"),
+            "failure_diagnostics": self.classify_failure(result).model_dump(),
             "messages": [
                 message_to_dict(message) if hasattr(message, "content") else message
                 for message in result.get("messages", [])

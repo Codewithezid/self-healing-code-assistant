@@ -23,3 +23,9 @@ class CodeSolution(BaseModel):
         if isinstance(value, dict):
             return "\n".join(f"{key}: {item}" for key, item in value.items())
         return str(value)
+
+
+class FailureDiagnostics(BaseModel):
+    category: str = "none"
+    stage: str = "none"
+    summary: str = ""

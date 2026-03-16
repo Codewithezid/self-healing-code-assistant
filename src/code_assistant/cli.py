@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from .assistant import CodeAssistant, CodeSolution
+from .profiles import get_runtime_profile
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -26,6 +27,12 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["mistral", "local"],
         default="mistral",
         help="Model provider to use.",
+    )
+    parser.add_argument(
+        "--runtime-profile",
+        choices=["custom", "fast", "balanced", "accurate"],
+        default="custom",
+        help="Named runtime preset for model, RAG, and retry settings.",
     )
     parser.add_argument(
         "--local-model",
@@ -84,14 +91,22 @@ def main() -> int:
         parser.error("A coding question is required.")
 
     try:
+        profile = get_runtime_profile(args.runtime_profile)
+        provider = profile.provider if profile is not None else args.provider
+        model_name = profile.model if profile is not None else args.model
+        max_iterations = profile.max_iterations if profile is not None else args.max_iterations
+        validation_timeout = profile.validation_timeout if profile is not None else args.validation_timeout
+        rag_enabled = profile.rag_enabled if profile is not None else args.rag
         assistant = CodeAssistant(
-            model_name=args.model,
-            max_iterations=args.max_iterations,
-            validation_timeout_seconds=args.validation_timeout,
-            provider=args.provider,
+            model_name=model_name,
+            max_iterations=max_iterations,
+            validation_timeout_seconds=validation_timeout,
+            provider=provider,
             local_model_name=args.local_model,
-            rag_enabled=args.rag,
+            rag_enabled=rag_enabled,
             rag_auto_index=args.rag_auto_index,
+            runtime_profile=args.runtime_profile,
+            corrective_rag_mode=(profile.corrective_rag_mode if profile is not None else "balanced"),
         )
     except RuntimeError as exc:
         print(f"Configuration error: {exc}")

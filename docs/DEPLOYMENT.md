@@ -29,6 +29,7 @@ Minimum production set:
 MISTRAL_API_KEY=...
 CODE_ASSISTANT_ALLOWED_PROVIDERS=mistral
 CODE_ASSISTANT_DEFAULT_PROVIDER=mistral
+CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE=balanced
 CODE_ASSISTANT_REQUIRE_ACCESS_TOKEN=false
 CODE_ASSISTANT_MAX_ITERATIONS_CAP=3
 CODE_ASSISTANT_VALIDATION_TIMEOUT_CAP=5
@@ -54,6 +55,7 @@ CODE_ASSISTANT_CORRECTIVE_RAG_MODE=balanced
 ## Operational recommendations
 
 - Keep `CODE_ASSISTANT_ALLOWED_PROVIDERS=mistral` in hosted environments.
+- Use `CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE=balanced` if you want safer defaults in the UI.
 - Keep frontend and API on the same hosted service/domain.
 - Keep retry counts and validation timeouts small on free tiers.
 - The current RAG implementation uses Mistral embeddings, so `MISTRAL_API_KEY` is still required when RAG is enabled.

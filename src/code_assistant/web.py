@@ -10,8 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .assistant import CodeAssistant
-from .models import CodeSolution
+from .models import CodeSolution, FailureDiagnostics
 from .platform_utils import InMemoryRateLimiter, UpstashRateLimiter, UpstashRedis
+from .profiles import RUNTIME_PROFILES, get_runtime_profile
 from .settings import BackendSettings, get_settings
 
 warnings.filterwarnings(
@@ -23,6 +24,7 @@ warnings.filterwarnings(
 
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1)
+    runtime_profile: Literal["custom", "fast", "balanced", "accurate"] = "custom"
     provider: Literal["mistral", "local"] = "mistral"
     model: str = "mistral-large-latest"
     local_model: str = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
@@ -60,6 +62,8 @@ class ChatResponse(BaseModel):
     rag_enabled: bool
     rag_sources: list[str]
     corrective_rag_mode: str
+    runtime_profile: str
+    failure_diagnostics: FailureDiagnostics
 
 
 class BackendConfigResponse(BaseModel):
@@ -74,6 +78,8 @@ class BackendConfigResponse(BaseModel):
     rag_default_enabled: bool
     corrective_rag_modes: list[str]
     corrective_rag_default_mode: str
+    runtime_profiles: list[str]
+    default_runtime_profile: str
 
 
 def _combined_code(solution: CodeSolution) -> str:
@@ -169,6 +175,8 @@ def create_app() -> FastAPI:
             rag_default_enabled=settings.rag_enabled,
             corrective_rag_modes=["fast", "balanced", "aggressive"],
             corrective_rag_default_mode=settings.corrective_rag_mode,
+            runtime_profiles=["custom", *RUNTIME_PROFILES.keys()],
+            default_runtime_profile=settings.default_runtime_profile,
         )
 
     @app.post("/api/chat", response_model=ChatResponse)
@@ -194,15 +202,12 @@ def create_app() -> FastAPI:
                 headers={"Retry-After": str(retry_after)},
             )
 
-        if request_body.provider not in settings.allowed_providers:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Provider '{request_body.provider}' is disabled for this deployment. "
-                    f"Allowed providers: {', '.join(settings.allowed_providers)}."
-                ),
-            )
-
+        runtime_profile = request_body.runtime_profile
+        if "runtime_profile" not in request_body.model_fields_set:
+            runtime_profile = settings.default_runtime_profile
+        profile = get_runtime_profile(runtime_profile)
+        request_provider = request_body.provider
+        resolved_model = request_body.model
         max_iterations = min(request_body.max_iterations, settings.max_iterations_cap)
         validation_timeout = min(
             request_body.validation_timeout,
@@ -210,12 +215,26 @@ def create_app() -> FastAPI:
         )
         rag_enabled = settings.rag_enabled if request_body.rag_enabled is None else request_body.rag_enabled
         corrective_rag_mode = request_body.corrective_rag_mode or settings.corrective_rag_mode
+        if profile is not None:
+            request_provider = profile.provider  # profiles are authoritative presets
+            resolved_model = profile.model
+            max_iterations = min(profile.max_iterations, settings.max_iterations_cap)
+            validation_timeout = min(profile.validation_timeout, settings.validation_timeout_cap)
+            rag_enabled = profile.rag_enabled
+            corrective_rag_mode = profile.corrective_rag_mode
+        if request_provider not in settings.allowed_providers:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Provider '{request_provider}' is disabled for this deployment. "
+                    f"Allowed providers: {', '.join(settings.allowed_providers)}."
+                ),
+            )
         thread_id = str(uuid.uuid4())
-        resolved_model = request_body.model
 
         try:
             assistant = CodeAssistant(
-                model_name=request_body.model,
+                model_name=resolved_model,
                 max_iterations=max_iterations,
                 validation_timeout_seconds=validation_timeout,
                 failure_log_path=str(settings.failure_log_path),
@@ -223,7 +242,7 @@ def create_app() -> FastAPI:
                 upstash_redis_rest_url=settings.upstash_redis_rest_url,
                 upstash_redis_rest_token=settings.upstash_redis_rest_token,
                 failure_log_key=settings.failure_log_key,
-                provider=request_body.provider,
+                provider=request_provider,
                 local_model_name=request_body.local_model,
                 rag_enabled=rag_enabled,
                 rag_auto_index=settings.rag_auto_index,
@@ -239,6 +258,7 @@ def create_app() -> FastAPI:
                 corrective_rag_mode=corrective_rag_mode,
                 corrective_rag_min_score=settings.corrective_rag_min_score,
                 corrective_rag_retry_k=settings.corrective_rag_retry_k,
+                runtime_profile=runtime_profile,
             )
             result = assistant.run(request_body.prompt, thread_id=thread_id)
         except RuntimeError as exc:
@@ -253,7 +273,7 @@ def create_app() -> FastAPI:
                 detail="The assistant did not return a structured solution.",
             )
 
-        if request_body.provider == "local":
+        if request_provider == "local":
             resolved_model = request_body.local_model
 
         raw_events = result.get("events", [])
@@ -271,10 +291,11 @@ def create_app() -> FastAPI:
             max_iterations=max_iterations,
         )
 
+        failure_diagnostics = CodeAssistant.classify_failure(result)
         return ChatResponse(
             thread_id=thread_id,
             status="success" if validation_passed else "error",
-            provider=request_body.provider,
+            provider=request_provider,
             model=resolved_model,
             iterations=int(result.get("iterations", 0) or 0),
             max_iterations=max_iterations,
@@ -289,6 +310,8 @@ def create_app() -> FastAPI:
             rag_enabled=rag_enabled,
             rag_sources=list(dict.fromkeys(rag_sources)),
             corrective_rag_mode=corrective_rag_mode,
+            runtime_profile=runtime_profile,
+            failure_diagnostics=failure_diagnostics,
         )
 
     if settings.public_dir.exists():
