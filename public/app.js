@@ -5,7 +5,9 @@ const DEFAULT_APP_CONFIG = {
   maxIterationsCap: 3,
   validationTimeoutCap: 5,
   ragAvailable: true,
-  ragDefaultEnabled: false
+  ragDefaultEnabled: false,
+  correctiveRagModes: ["fast", "balanced", "aggressive"],
+  correctiveRagDefaultMode: "balanced"
 };
 
 const APP_STATE = {
@@ -94,6 +96,11 @@ function updatePills() {
   if (ragPill) {
     ragPill.classList.toggle("active", APP_STATE.ragMode);
   }
+  const correctivePill = byId("pc");
+  if (correctivePill) {
+    correctivePill.textContent = valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode);
+    correctivePill.classList.toggle("active", APP_STATE.ragMode);
+  }
 }
 
 function toggleJson() {
@@ -123,6 +130,15 @@ function syncRag() {
   if (ragPill) {
     ragPill.classList.toggle("active", APP_STATE.ragMode);
   }
+  const correctiveMode = byId("correctiveRagMode");
+  if (correctiveMode) {
+    correctiveMode.disabled = !APP_STATE.ragMode || !APP_STATE.config.ragAvailable;
+  }
+  updatePills();
+}
+
+function syncCorrectiveRagMode() {
+  updatePills();
 }
 
 function clearAll() {
@@ -300,6 +316,7 @@ function renderAssistantBody(data) {
 
   if (data.rag_enabled) {
     const sources = Array.isArray(data.rag_sources) ? data.rag_sources : [];
+    chunks.push(`<p><span class="inline-code">corrective-rag</span> Mode: ${esc(data.corrective_rag_mode || "balanced")}</p>`);
     if (sources.length > 0) {
       chunks.push(`<p><span class="inline-code">rag</span> Retrieved context from ${esc(sources.join(", "))}</p>`);
     } else {
@@ -381,10 +398,21 @@ function applyProviders(config) {
 
 function applyRagConfig(config) {
   const ragToggle = byId("ragToggle");
+  const correctiveMode = byId("correctiveRagMode");
   if (!ragToggle) {
     return;
   }
   ragToggle.checked = Boolean(config.ragDefaultEnabled);
+  if (correctiveMode) {
+    const modes = Array.isArray(config.correctiveRagModes) && config.correctiveRagModes.length > 0
+      ? config.correctiveRagModes
+      : ["fast", "balanced", "aggressive"];
+    correctiveMode.innerHTML = modes
+      .map((mode) => `<option value="${esc(mode)}">${esc(mode)}</option>`)
+      .join("");
+    correctiveMode.value = config.correctiveRagDefaultMode || "balanced";
+    correctiveMode.disabled = !config.ragAvailable;
+  }
   ragToggle.disabled = !config.ragAvailable;
   syncRag();
   if (!config.ragAvailable) {
@@ -451,7 +479,8 @@ async function send() {
     show_events: checkedOf("showEvents", false),
     json_mode: checkedOf("jsonToggle", false),
     tracing: checkedOf("tracing", false),
-    rag_enabled: checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled)
+    rag_enabled: checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled),
+    corrective_rag_mode: valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode)
   };
 
   addUserMsg(prompt);
@@ -518,7 +547,9 @@ async function boot() {
       rateLimitRequests: backendConfig.rate_limit_requests,
       rateLimitWindowSeconds: backendConfig.rate_limit_window_seconds,
       ragAvailable: backendConfig.rag_available,
-      ragDefaultEnabled: backendConfig.rag_default_enabled
+      ragDefaultEnabled: backendConfig.rag_default_enabled,
+      correctiveRagModes: backendConfig.corrective_rag_modes,
+      correctiveRagDefaultMode: backendConfig.corrective_rag_default_mode
     };
     setSliderCaps(APP_STATE.config);
     applyProviders(APP_STATE.config);

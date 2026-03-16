@@ -32,6 +32,7 @@ class ChatRequest(BaseModel):
     json_mode: bool = False
     tracing: bool = False
     rag_enabled: bool | None = None
+    corrective_rag_mode: Literal["fast", "balanced", "aggressive"] | None = None
 
 
 class RunEvent(BaseModel):
@@ -58,6 +59,7 @@ class ChatResponse(BaseModel):
     json_mode: bool
     rag_enabled: bool
     rag_sources: list[str]
+    corrective_rag_mode: str
 
 
 class BackendConfigResponse(BaseModel):
@@ -70,6 +72,8 @@ class BackendConfigResponse(BaseModel):
     rate_limit_window_seconds: int
     rag_available: bool
     rag_default_enabled: bool
+    corrective_rag_modes: list[str]
+    corrective_rag_default_mode: str
 
 
 def _combined_code(solution: CodeSolution) -> str:
@@ -163,6 +167,8 @@ def create_app() -> FastAPI:
             rate_limit_window_seconds=settings.rate_limit_window_seconds,
             rag_available=True,
             rag_default_enabled=settings.rag_enabled,
+            corrective_rag_modes=["fast", "balanced", "aggressive"],
+            corrective_rag_default_mode=settings.corrective_rag_mode,
         )
 
     @app.post("/api/chat", response_model=ChatResponse)
@@ -203,6 +209,7 @@ def create_app() -> FastAPI:
             settings.validation_timeout_cap,
         )
         rag_enabled = settings.rag_enabled if request_body.rag_enabled is None else request_body.rag_enabled
+        corrective_rag_mode = request_body.corrective_rag_mode or settings.corrective_rag_mode
         thread_id = str(uuid.uuid4())
         resolved_model = request_body.model
 
@@ -229,6 +236,7 @@ def create_app() -> FastAPI:
                 rag_chunk_overlap=settings.rag_chunk_overlap,
                 corrective_rag_enabled=settings.corrective_rag_enabled,
                 corrective_rag_model=settings.corrective_rag_model,
+                corrective_rag_mode=corrective_rag_mode,
                 corrective_rag_min_score=settings.corrective_rag_min_score,
                 corrective_rag_retry_k=settings.corrective_rag_retry_k,
             )
@@ -280,6 +288,7 @@ def create_app() -> FastAPI:
             json_mode=request_body.json_mode,
             rag_enabled=rag_enabled,
             rag_sources=list(dict.fromkeys(rag_sources)),
+            corrective_rag_mode=corrective_rag_mode,
         )
 
     if settings.public_dir.exists():

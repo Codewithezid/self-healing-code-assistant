@@ -77,6 +77,7 @@ Responsibilities:
 - build the model chain
 - optionally retrieve matching project context from local Qdrant
 - grade weak retrievals and retry them with corrective query rewriting
+- support fast, balanced, and aggressive corrective-retrieval modes
 - run the LangGraph state machine
 - validate imports and code in an isolated subprocess
 - retry with corrective feedback until success or retry exhaustion

@@ -55,6 +55,14 @@
       <div class="lp-section">
         <div class="lp-label">Run settings</div>
         <div class="field">
+          <label class="field-label" for="correctiveRagMode">Corrective RAG mode</label>
+          <select class="field-select" id="correctiveRagMode" onchange="syncCorrectiveRagMode()">
+            <option value="fast">fast</option>
+            <option value="balanced" selected>balanced</option>
+            <option value="aggressive">aggressive</option>
+          </select>
+        </div>
+        <div class="field">
           <label class="field-label" for="maxIter">Max iterations</label>
           <div class="range-row">
             <input type="range" min="1" max="3" value="3" step="1" id="maxIter" oninput="document.getElementById('iN').textContent=this.value;updatePills()" />
@@ -133,6 +141,7 @@
                 <span class="hint-pill active" id="pm">mistral-large-latest</span>
                 <span class="hint-pill" id="pi">3 retries</span>
                 <span class="hint-pill" id="pr">rag</span>
+                <span class="hint-pill" id="pc">balanced</span>
                 <span class="hint-pill" id="pj">json</span>
               </div>
               <button class="send-btn" id="sendBtn" type="button" onclick="send()">
@@ -173,7 +182,7 @@
     </div>
   </div>
 
-  <script src="/config.js?v=20260315b"></script>
-  <script src="/app.js?v=20260315b"></script>
+  <script src="/config.js?v=20260316a"></script>
+  <script src="/app.js?v=20260316a"></script>
 </body>
 </html>

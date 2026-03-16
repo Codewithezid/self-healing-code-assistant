@@ -5,5 +5,7 @@ window.APP_CONFIG = window.APP_CONFIG || {
   maxIterationsCap: 3,
   validationTimeoutCap: 5,
   ragAvailable: true,
-  ragDefaultEnabled: false
+  ragDefaultEnabled: false,
+  correctiveRagModes: ["fast", "balanced", "aggressive"],
+  correctiveRagDefaultMode: "balanced"
 };

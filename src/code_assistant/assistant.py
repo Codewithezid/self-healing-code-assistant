@@ -67,6 +67,7 @@ class CodeAssistant:
         rag_chunk_overlap: int = 200,
         corrective_rag_enabled: bool = True,
         corrective_rag_model: str = "mistral-small-latest",
+        corrective_rag_mode: str = "balanced",
         corrective_rag_min_score: int = 3,
         corrective_rag_retry_k: int = 6,
     ) -> None:
@@ -96,6 +97,7 @@ class CodeAssistant:
                 auto_index=rag_auto_index,
                 corrective_enabled=corrective_rag_enabled,
                 corrective_model=corrective_rag_model,
+                corrective_mode=corrective_rag_mode,
                 corrective_min_score=corrective_rag_min_score,
                 corrective_retry_k=corrective_rag_retry_k,
             )

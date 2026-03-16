@@ -84,6 +84,7 @@ Optional RAG environment flags:
 - `CODE_ASSISTANT_RAG_QDRANT_PATH=data/qdrant`
 - `CODE_ASSISTANT_CORRECTIVE_RAG_ENABLED=true`
 - `CODE_ASSISTANT_CORRECTIVE_RAG_MODEL=mistral-small-latest`
+- `CODE_ASSISTANT_CORRECTIVE_RAG_MODE=balanced`
 
 ## Deployment
 

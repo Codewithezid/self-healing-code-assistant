@@ -5,7 +5,7 @@ import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Literal
 
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
@@ -39,6 +39,7 @@ DEFAULT_EXCLUDED_PARTS = {
 }
 
 QDRANT_LOCAL_LOCK = threading.RLock()
+CorrectiveRAGMode = Literal["fast", "balanced", "aggressive"]
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,7 @@ class ProjectRAG:
         auto_index: bool = False,
         corrective_enabled: bool = False,
         corrective_model: str = "mistral-small-latest",
+        corrective_mode: CorrectiveRAGMode = "balanced",
         corrective_min_score: int = 3,
         corrective_retry_k: int = 6,
         include_patterns: tuple[str, ...] = DEFAULT_INCLUDE_PATTERNS,
@@ -88,10 +90,19 @@ class ProjectRAG:
         self.auto_index = auto_index
         self.corrective_enabled = corrective_enabled
         self.corrective_model = corrective_model
+        self.corrective_mode: CorrectiveRAGMode = (
+            corrective_mode
+            if corrective_mode in {"fast", "balanced", "aggressive"}
+            else "balanced"
+        )
         self.corrective_min_score = corrective_min_score
         self.corrective_retry_k = corrective_retry_k
         self.include_patterns = include_patterns
-        self._corrective_chain = self._build_corrective_chain() if corrective_enabled else None
+        self._corrective_chain = (
+            self._build_corrective_chain()
+            if corrective_enabled and self._mode_uses_grader()
+            else None
+        )
 
     def index_project(self, *, force: bool = True) -> dict[str, int]:
         documents, file_count = self._build_documents()
@@ -163,22 +174,25 @@ class ProjectRAG:
             retry_query = self._fallback_rewrite(query)
             retried_documents = self._similarity_search(
                 retry_query,
-                k=max(self.retrieval_k, self.corrective_retry_k),
+                k=self._effective_retry_k(),
             )
             if retried_documents:
                 documents = retried_documents
                 active_query = retry_query
-                detail = "Corrective RAG retried retrieval after an empty initial result."
+                detail = (
+                    f"Corrective RAG ({self.corrective_mode}) retried retrieval "
+                    "after an empty initial result."
+                )
 
         if documents and self.corrective_enabled and self._corrective_chain is not None:
             decision = self._grade_retrieval(query, documents)
             if decision is not None and (
-                decision.score < self.corrective_min_score or decision.should_retry
+                decision.score < self._effective_min_score() or decision.should_retry
             ):
                 retry_query = decision.rewritten_query.strip() or self._fallback_rewrite(query)
                 retried_documents = self._similarity_search(
                     retry_query,
-                    k=max(self.retrieval_k, self.corrective_retry_k),
+                    k=self._effective_retry_k(),
                 )
                 retried_decision = self._grade_retrieval(query, retried_documents)
                 if retried_documents and self._should_use_retry(decision, retried_decision):
@@ -186,14 +200,17 @@ class ProjectRAG:
                     active_query = retry_query
                     if retried_decision is not None:
                         detail = (
-                            f"Corrective RAG retried retrieval with a rewritten query and "
+                            f"Corrective RAG ({self.corrective_mode}) retried retrieval with a rewritten query and "
                             f"accepted the result at score {retried_decision.score}/5."
                         )
                     else:
-                        detail = "Corrective RAG retried retrieval with a rewritten query."
+                        detail = (
+                            f"Corrective RAG ({self.corrective_mode}) retried retrieval "
+                            "with a rewritten query."
+                        )
                 else:
                     detail = (
-                        f"Corrective RAG kept the original retrieval after grading it at "
+                        f"Corrective RAG ({self.corrective_mode}) kept the original retrieval after grading it at "
                         f"score {decision.score}/5."
                     )
 
@@ -263,6 +280,21 @@ class ProjectRAG:
             temperature=0.0,
         )
         return prompt | llm.with_structured_output(CorrectiveRAGDecision)
+
+    def _mode_uses_grader(self) -> bool:
+        return self.corrective_mode in {"balanced", "aggressive"}
+
+    def _effective_min_score(self) -> int:
+        if self.corrective_mode == "aggressive":
+            return max(self.corrective_min_score, 4)
+        return self.corrective_min_score
+
+    def _effective_retry_k(self) -> int:
+        if self.corrective_mode == "aggressive":
+            return max(self.corrective_retry_k, self.retrieval_k + 2)
+        if self.corrective_mode == "fast":
+            return self.retrieval_k
+        return max(self.retrieval_k, self.corrective_retry_k)
 
     def _grade_retrieval(
         self,
