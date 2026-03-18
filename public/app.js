@@ -28,12 +28,12 @@ const APP_STATE = {
 };
 
 const MODEL_OPTIONS = {
-  openai: ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1-nano"],
-  mistral: ["mistral-small-latest", "mistral-medium-latest", "codestral-latest"]
+  openai: ["gpt-5.1", "gpt-5", "gpt-4.1"],
+  mistral: ["codestral-latest", "mistral-medium-latest", "mistral-small-latest"]
 };
 
 const DEFAULT_MODEL_BY_PROVIDER = {
-  openai: "gpt-4.1-mini",
+  openai: "gpt-5.1",
   mistral: "mistral-medium-latest"
 };
 
@@ -178,13 +178,9 @@ function selectedKeyId() {
 function setKeyControlsVisibility() {
   const provider = selectedProvider();
   const field = byId("savedKeyField");
-  const addField = byId("addKeyField");
   const enabled = APP_STATE.config.userKeysEnabled && provider !== "local";
   if (field) {
     field.style.display = enabled ? "" : "none";
-  }
-  if (addField) {
-    addField.style.display = enabled ? "" : "none";
   }
 }
 
@@ -236,7 +232,9 @@ async function refreshProviderModels(provider, preferredModel = "") {
   try {
     const payload = await requestJson(path);
     if (Array.isArray(payload.models) && payload.models.length > 0) {
-      APP_STATE.modelsByProvider[provider] = payload.models;
+      const curated = MODEL_OPTIONS[provider] || [];
+      const filtered = payload.models.filter((model) => curated.includes(model));
+      APP_STATE.modelsByProvider[provider] = filtered.length > 0 ? filtered : curated;
     }
   } catch (err) {
     addLog(`Model sync failed: ${err.message || "request failed"}`);
@@ -261,10 +259,10 @@ async function saveApiKey() {
     addLog("Local provider does not use API keys.");
     return;
   }
-  const input = byId("apiKeyInput");
-  const apiKey = input ? input.value.trim() : "";
-  if (!apiKey) {
-    addLog("Paste an API key first.");
+  const apiKey = window.prompt(`Paste ${provider} API key:`) || "";
+  const trimmedKey = apiKey.trim();
+  if (!trimmedKey) {
+    addLog("Key add canceled.");
     return;
   }
   try {
@@ -273,16 +271,15 @@ async function saveApiKey() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         provider,
-        api_key: apiKey,
+        api_key: trimmedKey,
         label: `${provider}-key`
       })
     });
-    if (input) {
-      input.value = "";
-    }
     await loadSavedKeys(provider, payload.key && payload.key.key_id ? payload.key.key_id : "");
     if (Array.isArray(payload.models) && payload.models.length > 0) {
-      APP_STATE.modelsByProvider[provider] = payload.models;
+      const curated = MODEL_OPTIONS[provider] || [];
+      const filtered = payload.models.filter((model) => curated.includes(model));
+      APP_STATE.modelsByProvider[provider] = filtered.length > 0 ? filtered : curated;
     }
     setModelOptionsForProvider(provider, valueOf("modelSel", defaultModelForProvider(provider)));
     updatePills();
