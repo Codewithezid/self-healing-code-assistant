@@ -190,16 +190,19 @@ function populateSavedKeys(provider, preferredKeyId = "") {
     return;
   }
   const keys = APP_STATE.keysByProvider[provider] || [];
-  const options = [
-    '<option value="">server default key</option>',
-    ...keys.map((item) => {
+  const options = keys.length === 0
+    ? ['<option value="" disabled selected>no saved keys</option>']
+    : keys.map((item) => {
       const title = `${item.label} (${item.masked_key})`;
       return `<option value="${esc(item.key_id)}">${esc(title)}</option>`;
-    })
-  ];
+    });
   sel.innerHTML = options.join("");
   if (preferredKeyId && keys.some((item) => item.key_id === preferredKeyId)) {
     sel.value = preferredKeyId;
+    return;
+  }
+  if (keys.length > 0) {
+    sel.value = keys[0].key_id;
   }
 }
 

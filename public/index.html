@@ -50,7 +50,7 @@
           <label class="field-label" for="savedKeySel">Saved key</label>
           <div class="range-row">
             <select class="field-select" id="savedKeySel" onchange="handleSavedKeyChange()">
-              <option value="">server default key</option>
+              <option value="" disabled selected>no saved keys</option>
             </select>
             <button class="tbtn" type="button" onclick="saveApiKey()">+ Add key</button>
             <button class="tbtn" type="button" onclick="removeSelectedApiKey()">Remove</button>
