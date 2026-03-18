@@ -27,7 +27,9 @@ Minimum production set:
 
 ```powershell
 MISTRAL_API_KEY=...
-CODE_ASSISTANT_ALLOWED_PROVIDERS=mistral
+OPENAI_API_KEY=...
+OPENROUTER_API_KEY=...
+CODE_ASSISTANT_ALLOWED_PROVIDERS=openai,openrouter,mistral
 CODE_ASSISTANT_DEFAULT_PROVIDER=mistral
 CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE=balanced
 CODE_ASSISTANT_REQUIRE_ACCESS_TOKEN=false
@@ -55,7 +57,7 @@ CODE_ASSISTANT_CORRECTIVE_RAG_MODE=balanced
 
 ## Operational recommendations
 
-- Keep `CODE_ASSISTANT_ALLOWED_PROVIDERS=mistral` in hosted environments.
+- Set `CODE_ASSISTANT_ALLOWED_PROVIDERS` to the providers you want visible in UI.
 - Use `CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE=balanced` if you want safer defaults in the UI.
 - Use `CODE_ASSISTANT_SANDBOX_CMD` to prefix validation with a container/namespace sandbox (e.g., `firejail --quiet --private`) when your host supports it. On Windows, quote executable paths that contain spaces.
 - Keep frontend and API on the same hosted service/domain.

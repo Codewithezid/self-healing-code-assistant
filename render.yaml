@@ -12,8 +12,12 @@ services:
         value: 3.13.2
       - key: MISTRAL_API_KEY
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
       - key: CODE_ASSISTANT_ALLOWED_PROVIDERS
-        value: mistral
+        value: openai,openrouter,mistral
       - key: CODE_ASSISTANT_DEFAULT_PROVIDER
         value: mistral
       - key: CODE_ASSISTANT_REQUIRE_ACCESS_TOKEN
