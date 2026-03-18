@@ -46,6 +46,22 @@
             <option>codestral-latest</option>
           </select>
         </div>
+        <div class="field" id="savedKeyField" style="display:none">
+          <label class="field-label" for="savedKeySel">Saved key</label>
+          <div class="range-row">
+            <select class="field-select" id="savedKeySel" onchange="handleSavedKeyChange()">
+              <option value="">server default key</option>
+            </select>
+            <button class="tbtn" type="button" onclick="removeSelectedApiKey()">Remove</button>
+          </div>
+        </div>
+        <div class="field" id="addKeyField" style="display:none">
+          <label class="field-label" for="apiKeyInput">Add API key</label>
+          <input class="field-input" id="apiKeyInput" type="password" placeholder="Paste provider API key" autocomplete="off" />
+          <div class="range-row">
+            <button class="tbtn" type="button" onclick="saveApiKey()">+ Add key</button>
+          </div>
+        </div>
         <div class="field" id="localField" style="display:none">
           <label class="field-label" for="localPath">Local model / adapter path</label>
           <input class="field-input" id="localPath" type="text" value="Qwen/Qwen2.5-Coder-0.5B-Instruct" />

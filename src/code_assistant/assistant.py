@@ -72,6 +72,7 @@ class CodeAssistant:
         corrective_rag_retry_k: int = 6,
         runtime_profile: str = "custom",
         sandbox_cmd: list[str] | tuple[str, ...] | None = None,
+        api_key: str | None = None,
     ) -> None:
         self.model_name = model_name
         self.temperature = temperature
@@ -87,6 +88,7 @@ class CodeAssistant:
         self.provider = provider
         self.runtime_profile = runtime_profile
         self.sandbox_cmd = list(sandbox_cmd) if sandbox_cmd else []
+        self.api_key = (api_key or "").strip()
         self.local_model_name = local_model_name
         self.local_max_new_tokens = local_max_new_tokens
         self.rag = (
@@ -114,8 +116,9 @@ class CodeAssistant:
         )
         self._graph = self._build_graph()
 
-    @staticmethod
-    def _require_api_key(provider: str) -> str:
+    def _resolve_api_key(self, provider: str) -> str:
+        if self.api_key:
+            return self.api_key
         key_var_by_provider = {
             "mistral": "MISTRAL_API_KEY",
             "openai": "OPENAI_API_KEY",
@@ -134,23 +137,37 @@ class CodeAssistant:
 
     def _build_remote_llm(self):
         if self.provider == "mistral":
-            self._require_api_key("mistral")
-            return ChatMistralAI(
-                model=self.model_name,
-                temperature=self.temperature,
-            )
+            api_key = self._resolve_api_key("mistral")
+            kwargs: dict[str, Any] = {
+                "model": self.model_name,
+                "temperature": self.temperature,
+                "api_key": api_key,
+            }
+            try:
+                return ChatMistralAI(**kwargs)
+            except TypeError:
+                kwargs.pop("api_key", None)
+                kwargs["mistral_api_key"] = api_key
+                return ChatMistralAI(**kwargs)
         if self.provider == "openai":
-            self._require_api_key("openai")
+            api_key = self._resolve_api_key("openai")
             try:
                 from langchain_openai import ChatOpenAI
             except ModuleNotFoundError as exc:
                 raise RuntimeError(
                     "OpenAI provider requires langchain-openai. Install dependencies from requirements.txt."
                 ) from exc
-            return ChatOpenAI(
-                model=self.model_name,
-                temperature=self.temperature,
-            )
+            kwargs = {
+                "model": self.model_name,
+                "temperature": self.temperature,
+                "api_key": api_key,
+            }
+            try:
+                return ChatOpenAI(**kwargs)
+            except TypeError:
+                kwargs.pop("api_key", None)
+                kwargs["openai_api_key"] = api_key
+                return ChatOpenAI(**kwargs)
         raise RuntimeError(
             f"Unsupported provider '{self.provider}'. Supported providers are: mistral, openai, local."
         )

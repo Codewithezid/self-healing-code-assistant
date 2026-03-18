@@ -14,6 +14,7 @@ The repository supports two ways to use it:
 - Retries failed generations up to a configurable limit
 - Optionally retrieves project-aware context from a local Qdrant RAG index
 - Supports runtime profiles for fast, balanced, and accuracy-focused runs
+- Supports user-managed provider API keys via encrypted key IDs (BYOK)
 - Classifies failed runs so retrieval, import, timeout, and runtime errors are easier to debug
 - Writes structured benchmark reports for accuracy and latency tracking
 - Optional sandbox prefix for code validation (e.g., firejail/nsjail) for safer execution
@@ -42,6 +43,7 @@ Copy-Item .env.example .env
 ```
 
 Set at least one hosted key in `.env` (`OPENAI_API_KEY` or `MISTRAL_API_KEY`).
+To persist user-added keys safely, set `CODE_ASSISTANT_USER_KEYS_SECRET` to a strong secret value.
 If you want project-aware retrieval, build the local index once:
 
 ```powershell

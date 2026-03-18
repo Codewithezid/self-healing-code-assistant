@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import os
 import uuid
 import warnings
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .assistant import CodeAssistant
+from .key_vault import EncryptedKeyVault, StoredKeyPublic
 from .models import CodeSolution, FailureDiagnostics
 from .platform_utils import InMemoryRateLimiter, UpstashRateLimiter, UpstashRedis
 from .profiles import RUNTIME_PROFILES, get_runtime_profile
+from .provider_clients import (
+    ProviderClientError,
+    list_models_for_provider,
+    supports_hosted_provider,
+)
 from .settings import BackendSettings, get_settings
 
 warnings.filterwarnings(
@@ -33,6 +40,7 @@ class ChatRequest(BaseModel):
     show_events: bool = False
     json_mode: bool = False
     tracing: bool = False
+    provider_key_id: str | None = None
     rag_enabled: bool | None = None
     corrective_rag_mode: Literal["fast", "balanced", "aggressive"] | None = None
 
@@ -80,6 +88,39 @@ class BackendConfigResponse(BaseModel):
     corrective_rag_default_mode: str
     runtime_profiles: list[str]
     default_runtime_profile: str
+    user_keys_enabled: bool
+    user_keys_persistent: bool
+    user_keys_max_entries: int
+
+
+class StoredKeyResponse(BaseModel):
+    key_id: str
+    provider: str
+    label: str
+    masked_key: str
+    created_at: str
+
+
+class SaveKeyRequest(BaseModel):
+    provider: str = Field(min_length=2, max_length=50)
+    api_key: str = Field(min_length=8, max_length=2048)
+    label: str = Field(default="", max_length=120)
+
+
+class SaveKeyResponse(BaseModel):
+    key: StoredKeyResponse
+    models: list[str]
+
+
+class DeleteKeyResponse(BaseModel):
+    deleted: bool
+
+
+class ProviderModelsResponse(BaseModel):
+    provider: str
+    models: list[str]
+    source: Literal["environment", "saved_key"]
+    key_id: str | None = None
 
 
 def _combined_code(solution: CodeSolution) -> str:
@@ -137,9 +178,28 @@ def _build_rate_limiter(settings: BackendSettings):
     return InMemoryRateLimiter()
 
 
+def _as_key_response(record: StoredKeyPublic) -> StoredKeyResponse:
+    return StoredKeyResponse(
+        key_id=record.key_id,
+        provider=record.provider,
+        label=record.label,
+        masked_key=record.masked_key,
+        created_at=record.created_at,
+    )
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     rate_limiter = _build_rate_limiter(settings)
+    key_vault = (
+        EncryptedKeyVault(
+            file_path=settings.user_keys_path,
+            secret=settings.user_keys_secret,
+            max_entries=settings.user_keys_max_entries,
+        )
+        if settings.user_keys_enabled
+        else None
+    )
 
     app = FastAPI(
         title="LangGraph Code Assistant",
@@ -177,30 +237,199 @@ def create_app() -> FastAPI:
             corrective_rag_default_mode=settings.corrective_rag_mode,
             runtime_profiles=["custom", *RUNTIME_PROFILES.keys()],
             default_runtime_profile=settings.default_runtime_profile,
+            user_keys_enabled=bool(settings.user_keys_enabled),
+            user_keys_persistent=bool(key_vault.persistent if key_vault else False),
+            user_keys_max_entries=settings.user_keys_max_entries,
+        )
+
+    def require_auth(request: Request) -> None:
+        if not settings.auth_token:
+            return
+        supplied_token = _extract_access_token(request)
+        if supplied_token != settings.auth_token:
+            raise HTTPException(status_code=401, detail="Missing or invalid access token.")
+
+    def enforce_rate_limit(
+        request: Request,
+        *,
+        scope: str,
+        limit: int | None = None,
+    ) -> None:
+        client_ip = _client_ip(request)
+        allowed, retry_after = rate_limiter.allow(
+            f"{scope}:{client_ip}",
+            limit=limit or settings.rate_limit_requests,
+            window_seconds=settings.rate_limit_window_seconds,
+        )
+        if allowed:
+            return
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Rate limit exceeded. "
+                f"Try again in about {retry_after} second(s)."
+            ),
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    def require_user_keys_enabled() -> EncryptedKeyVault:
+        if not settings.user_keys_enabled or key_vault is None:
+            raise HTTPException(
+                status_code=403,
+                detail="User-managed API keys are disabled on this deployment.",
+            )
+        return key_vault
+
+    def require_provider_allowed(provider: str) -> str:
+        normalized = provider.strip().lower()
+        if normalized not in settings.allowed_providers:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Provider '{normalized}' is disabled for this deployment. "
+                    f"Allowed providers: {', '.join(settings.allowed_providers)}."
+                ),
+            )
+        return normalized
+
+    def resolve_provider_api_key(
+        *,
+        provider: str,
+        key_id: str | None,
+    ) -> tuple[str, str, str | None]:
+        normalized_provider = provider.strip().lower()
+        selected_key_id = (key_id or "").strip()
+        if selected_key_id:
+            vault = require_user_keys_enabled()
+            key = vault.get_api_key(key_id=selected_key_id, provider=normalized_provider)
+            if not key:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Saved API key not found for the selected provider.",
+                )
+            return key, "saved_key", selected_key_id
+
+        env_key_name = {
+            "openai": "OPENAI_API_KEY",
+            "mistral": "MISTRAL_API_KEY",
+        }.get(normalized_provider, "")
+        env_key = ""
+        if env_key_name:
+            env_key = os.getenv(env_key_name, "").strip()
+        if not env_key:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No server key configured for this provider. "
+                    "Add a user key first."
+                ),
+            )
+        return env_key, "environment", None
+
+    @app.get("/api/keys", response_model=list[StoredKeyResponse])
+    def list_keys(
+        request: Request,
+        provider: str | None = Query(default=None),
+    ) -> list[StoredKeyResponse]:
+        require_auth(request)
+        vault = require_user_keys_enabled()
+        normalized_provider = provider.strip().lower() if provider else None
+        if normalized_provider:
+            require_provider_allowed(normalized_provider)
+            if normalized_provider == "local":
+                return []
+        records = vault.list_keys(provider=normalized_provider)
+        return [_as_key_response(record) for record in records]
+
+    @app.post("/api/keys", response_model=SaveKeyResponse)
+    def save_key(request_body: SaveKeyRequest, request: Request) -> SaveKeyResponse:
+        require_auth(request)
+        enforce_rate_limit(
+            request,
+            scope="keys",
+            limit=max(3, min(settings.rate_limit_requests, 10)),
+        )
+        vault = require_user_keys_enabled()
+        provider = require_provider_allowed(request_body.provider)
+        if provider == "local":
+            raise HTTPException(
+                status_code=400,
+                detail="Local provider does not require an API key.",
+            )
+        if not supports_hosted_provider(provider):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Provider '{provider}' is not supported for key testing yet.",
+            )
+        try:
+            models = list_models_for_provider(provider, request_body.api_key)
+            record = vault.add_key(
+                provider=provider,
+                api_key=request_body.api_key,
+                label=request_body.label,
+            )
+        except ProviderClientError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return SaveKeyResponse(
+            key=_as_key_response(record),
+            models=models[:200],
+        )
+
+    @app.delete("/api/keys/{key_id}", response_model=DeleteKeyResponse)
+    def delete_key(key_id: str, request: Request) -> DeleteKeyResponse:
+        require_auth(request)
+        vault = require_user_keys_enabled()
+        return DeleteKeyResponse(deleted=vault.delete_key(key_id=key_id))
+
+    @app.get("/api/providers/{provider}/models", response_model=ProviderModelsResponse)
+    def list_provider_models(
+        provider: str,
+        request: Request,
+        key_id: str | None = Query(default=None),
+    ) -> ProviderModelsResponse:
+        require_auth(request)
+        enforce_rate_limit(
+            request,
+            scope="models",
+            limit=max(5, min(settings.rate_limit_requests, 20)),
+        )
+        normalized_provider = require_provider_allowed(provider)
+        if normalized_provider == "local":
+            return ProviderModelsResponse(
+                provider="local",
+                models=[],
+                source="environment",
+                key_id=None,
+            )
+        if not supports_hosted_provider(normalized_provider):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Provider '{normalized_provider}' is not supported for model listing yet.",
+            )
+
+        api_key, source, resolved_key_id = resolve_provider_api_key(
+            provider=normalized_provider,
+            key_id=key_id,
+        )
+        try:
+            models = list_models_for_provider(normalized_provider, api_key)
+        except ProviderClientError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return ProviderModelsResponse(
+            provider=normalized_provider,
+            models=models[:200],
+            source=source,
+            key_id=resolved_key_id,
         )
 
     @app.post("/api/chat", response_model=ChatResponse)
     def run_chat(request_body: ChatRequest, request: Request) -> ChatResponse:
-        if settings.auth_token:
-            supplied_token = _extract_access_token(request)
-            if supplied_token != settings.auth_token:
-                raise HTTPException(status_code=401, detail="Missing or invalid access token.")
-
-        client_ip = _client_ip(request)
-        allowed, retry_after = rate_limiter.allow(
-            f"chat:{client_ip}",
-            limit=settings.rate_limit_requests,
-            window_seconds=settings.rate_limit_window_seconds,
-        )
-        if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    "Rate limit exceeded. "
-                    f"Try again in about {retry_after} second(s)."
-                ),
-                headers={"Retry-After": str(retry_after)},
-            )
+        require_auth(request)
+        enforce_rate_limit(request, scope="chat")
 
         runtime_profile = request_body.runtime_profile
         if "runtime_profile" not in request_body.model_fields_set:
@@ -222,14 +451,20 @@ def create_app() -> FastAPI:
             validation_timeout = min(profile.validation_timeout, settings.validation_timeout_cap)
             rag_enabled = profile.rag_enabled
             corrective_rag_mode = profile.corrective_rag_mode
-        if request_provider not in settings.allowed_providers:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Provider '{request_provider}' is disabled for this deployment. "
-                    f"Allowed providers: {', '.join(settings.allowed_providers)}."
-                ),
+        request_provider = require_provider_allowed(request_provider)
+        provider_key_id = (request_body.provider_key_id or "").strip() or None
+        selected_api_key = None
+        if request_provider != "local" and provider_key_id:
+            vault = require_user_keys_enabled()
+            selected_api_key = vault.get_api_key(
+                key_id=provider_key_id,
+                provider=request_provider,
             )
+            if not selected_api_key:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Saved API key not found for the selected provider.",
+                )
         thread_id = str(uuid.uuid4())
 
         try:
@@ -260,6 +495,7 @@ def create_app() -> FastAPI:
                 corrective_rag_retry_k=settings.corrective_rag_retry_k,
                 runtime_profile=runtime_profile,
                 sandbox_cmd=settings.sandbox_cmd,
+                api_key=selected_api_key,
             )
             result = assistant.run(request_body.prompt, thread_id=thread_id)
         except RuntimeError as exc:

@@ -9,7 +9,10 @@ const DEFAULT_APP_CONFIG = {
   correctiveRagModes: ["fast", "balanced", "aggressive"],
   correctiveRagDefaultMode: "balanced",
   runtimeProfiles: ["custom", "fast", "balanced", "accurate"],
-  defaultRuntimeProfile: "custom"
+  defaultRuntimeProfile: "custom",
+  userKeysEnabled: false,
+  userKeysPersistent: false,
+  userKeysMaxEntries: 50
 };
 
 const APP_STATE = {
@@ -19,6 +22,8 @@ const APP_STATE = {
   tkN: 0,
   jMode: false,
   ragMode: false,
+  keysByProvider: {},
+  modelsByProvider: {},
   config: { ...DEFAULT_APP_CONFIG, ...(window.APP_CONFIG || {}) }
 };
 
@@ -45,7 +50,9 @@ function setModelOptionsForProvider(provider, preferredModel = "") {
     modelSel.innerHTML = "";
     return;
   }
-  const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.mistral;
+  const options = APP_STATE.modelsByProvider[provider]
+    || MODEL_OPTIONS[provider]
+    || MODEL_OPTIONS.mistral;
   modelSel.innerHTML = options
     .map((model) => `<option value="${esc(model)}">${esc(model)}</option>`)
     .join("");
@@ -117,6 +124,8 @@ function handleProvider(preserveProfile = false) {
   if (providerPill) {
     providerPill.textContent = provider;
   }
+  setKeyControlsVisibility();
+  void syncProviderRuntime(provider, currentModel);
   updatePills();
 }
 
@@ -155,6 +164,150 @@ function updatePills() {
   if (correctivePill) {
     correctivePill.textContent = valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode);
     correctivePill.classList.toggle("active", APP_STATE.ragMode);
+  }
+}
+
+function selectedProvider() {
+  return valueOf("providerSel", APP_STATE.config.defaultProvider || "mistral");
+}
+
+function selectedKeyId() {
+  return valueOf("savedKeySel", "");
+}
+
+function setKeyControlsVisibility() {
+  const provider = selectedProvider();
+  const field = byId("savedKeyField");
+  const addField = byId("addKeyField");
+  const enabled = APP_STATE.config.userKeysEnabled && provider !== "local";
+  if (field) {
+    field.style.display = enabled ? "" : "none";
+  }
+  if (addField) {
+    addField.style.display = enabled ? "" : "none";
+  }
+}
+
+function populateSavedKeys(provider, preferredKeyId = "") {
+  const sel = byId("savedKeySel");
+  if (!sel) {
+    return;
+  }
+  const keys = APP_STATE.keysByProvider[provider] || [];
+  const options = [
+    '<option value="">server default key</option>',
+    ...keys.map((item) => {
+      const title = `${item.label} (${item.masked_key})`;
+      return `<option value="${esc(item.key_id)}">${esc(title)}</option>`;
+    })
+  ];
+  sel.innerHTML = options.join("");
+  if (preferredKeyId && keys.some((item) => item.key_id === preferredKeyId)) {
+    sel.value = preferredKeyId;
+  }
+}
+
+async function loadSavedKeys(provider, preferredKeyId = "") {
+  if (!APP_STATE.config.userKeysEnabled || provider === "local") {
+    populateSavedKeys(provider, "");
+    return;
+  }
+  try {
+    const rows = await requestJson(`/api/keys?provider=${encodeURIComponent(provider)}`);
+    APP_STATE.keysByProvider[provider] = Array.isArray(rows) ? rows : [];
+    populateSavedKeys(provider, preferredKeyId);
+  } catch (err) {
+    APP_STATE.keysByProvider[provider] = [];
+    populateSavedKeys(provider, "");
+    addLog(`Saved key load failed: ${err.message || "request failed"}`);
+  }
+}
+
+async function refreshProviderModels(provider, preferredModel = "") {
+  if (provider === "local") {
+    setModelOptionsForProvider(provider, preferredModel);
+    return;
+  }
+  const activeKeyId = selectedKeyId();
+  let path = `/api/providers/${encodeURIComponent(provider)}/models`;
+  if (activeKeyId) {
+    path += `?key_id=${encodeURIComponent(activeKeyId)}`;
+  }
+  try {
+    const payload = await requestJson(path);
+    if (Array.isArray(payload.models) && payload.models.length > 0) {
+      APP_STATE.modelsByProvider[provider] = payload.models;
+    }
+  } catch (err) {
+    addLog(`Model sync failed: ${err.message || "request failed"}`);
+  }
+  setModelOptionsForProvider(provider, preferredModel);
+  updatePills();
+}
+
+async function syncProviderRuntime(provider, preferredModel = "") {
+  await loadSavedKeys(provider);
+  await refreshProviderModels(provider, preferredModel);
+}
+
+async function handleSavedKeyChange() {
+  markRuntimeProfileCustom();
+  await refreshProviderModels(selectedProvider(), valueOf("modelSel", ""));
+}
+
+async function saveApiKey() {
+  const provider = selectedProvider();
+  if (provider === "local") {
+    addLog("Local provider does not use API keys.");
+    return;
+  }
+  const input = byId("apiKeyInput");
+  const apiKey = input ? input.value.trim() : "";
+  if (!apiKey) {
+    addLog("Paste an API key first.");
+    return;
+  }
+  try {
+    const payload = await requestJson("/api/keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider,
+        api_key: apiKey,
+        label: `${provider}-key`
+      })
+    });
+    if (input) {
+      input.value = "";
+    }
+    await loadSavedKeys(provider, payload.key && payload.key.key_id ? payload.key.key_id : "");
+    if (Array.isArray(payload.models) && payload.models.length > 0) {
+      APP_STATE.modelsByProvider[provider] = payload.models;
+    }
+    setModelOptionsForProvider(provider, valueOf("modelSel", defaultModelForProvider(provider)));
+    updatePills();
+    addLog("API key saved and validated.");
+  } catch (err) {
+    addLog(`Key save failed: ${err.message || "request failed"}`);
+    addErrMsg(err.message || "Failed to save key.");
+  }
+}
+
+async function removeSelectedApiKey() {
+  const provider = selectedProvider();
+  const keyId = selectedKeyId();
+  if (!keyId) {
+    addLog("Choose a saved key to remove.");
+    return;
+  }
+  try {
+    await requestJson(`/api/keys/${encodeURIComponent(keyId)}`, { method: "DELETE" });
+    await loadSavedKeys(provider, "");
+    await refreshProviderModels(provider, valueOf("modelSel", defaultModelForProvider(provider)));
+    addLog("Saved key removed.");
+  } catch (err) {
+    addLog(`Key delete failed: ${err.message || "request failed"}`);
+    addErrMsg(err.message || "Failed to delete key.");
   }
 }
 
@@ -602,6 +755,7 @@ async function send() {
     prompt,
     provider: valueOf("providerSel", APP_STATE.config.defaultProvider || "mistral"),
     model: valueOf("modelSel", defaultModelForProvider(valueOf("providerSel", APP_STATE.config.defaultProvider || "mistral"))),
+    provider_key_id: valueOf("savedKeySel", ""),
     local_model: valueOf("localPath", "Qwen/Qwen2.5-Coder-0.5B-Instruct"),
     max_iterations: Number(valueOf("maxIter", "3")),
     validation_timeout: Number(valueOf("timeoutR", "5")),
@@ -656,6 +810,8 @@ async function send() {
 }
 
 async function boot() {
+  APP_STATE.modelsByProvider = { ...MODEL_OPTIONS };
+
   const localPath = byId("localPath");
   if (localPath) {
     localPath.addEventListener("input", () => {
@@ -684,7 +840,10 @@ async function boot() {
       correctiveRagModes: backendConfig.corrective_rag_modes,
       correctiveRagDefaultMode: backendConfig.corrective_rag_default_mode,
       runtimeProfiles: backendConfig.runtime_profiles,
-      defaultRuntimeProfile: backendConfig.default_runtime_profile
+      defaultRuntimeProfile: backendConfig.default_runtime_profile,
+      userKeysEnabled: Boolean(backendConfig.user_keys_enabled),
+      userKeysPersistent: Boolean(backendConfig.user_keys_persistent),
+      userKeysMaxEntries: Number(backendConfig.user_keys_max_entries || 50)
     };
     setSliderCaps(APP_STATE.config);
     applyProviders(APP_STATE.config);
@@ -694,6 +853,17 @@ async function boot() {
     addLog(
       `Rate limit: ${APP_STATE.config.rateLimitRequests} request(s) per ${APP_STATE.config.rateLimitWindowSeconds}s.`
     );
+    if (APP_STATE.config.userKeysEnabled) {
+      addLog(
+        APP_STATE.config.userKeysPersistent
+          ? "BYOK enabled (encrypted persistent key vault)."
+          : "BYOK enabled (ephemeral vault; saved keys reset on backend restart)."
+      );
+      setKeyControlsVisibility();
+      await syncProviderRuntime(selectedProvider(), valueOf("modelSel", ""));
+    } else {
+      setKeyControlsVisibility();
+    }
     if (APP_STATE.config.authRequired) {
       addLog("Backend auth token is enabled. Disable CODE_ASSISTANT_ACCESS_TOKEN for this embedded UI.");
       setStat("error");

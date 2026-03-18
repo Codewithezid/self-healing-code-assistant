@@ -79,6 +79,10 @@ class BackendSettings:
     corrective_rag_min_score: int
     corrective_rag_retry_k: int
     sandbox_cmd: tuple[str, ...]
+    user_keys_enabled: bool
+    user_keys_path: Path
+    user_keys_secret: str
+    user_keys_max_entries: int
 
 
 @lru_cache(maxsize=1)
@@ -145,4 +149,8 @@ def get_settings() -> BackendSettings:
         corrective_rag_min_score=_int_env("CODE_ASSISTANT_CORRECTIVE_RAG_MIN_SCORE", 3, minimum=1, maximum=5),
         corrective_rag_retry_k=_int_env("CODE_ASSISTANT_CORRECTIVE_RAG_RETRY_K", 6, minimum=1, maximum=12),
         sandbox_cmd=sandbox_cmd,
+        user_keys_enabled=_bool_env("CODE_ASSISTANT_USER_KEYS_ENABLED", True),
+        user_keys_path=project_root / os.getenv("CODE_ASSISTANT_USER_KEYS_PATH", "data/runtime/user_keys.enc.json"),
+        user_keys_secret=os.getenv("CODE_ASSISTANT_USER_KEYS_SECRET", "").strip(),
+        user_keys_max_entries=_int_env("CODE_ASSISTANT_USER_KEYS_MAX_ENTRIES", 50, minimum=1, maximum=500),
     )
