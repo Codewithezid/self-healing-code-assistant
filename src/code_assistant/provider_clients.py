@@ -10,7 +10,7 @@ class ProviderClientError(RuntimeError):
     pass
 
 
-SUPPORTED_HOSTED_PROVIDERS = {"openai", "mistral"}
+SUPPORTED_HOSTED_PROVIDERS = {"openai", "mistral", "openrouter"}
 
 
 def supports_hosted_provider(provider: str) -> bool:
@@ -27,6 +27,8 @@ def list_models_for_provider(provider: str, api_key: str) -> list[str]:
         return _list_openai_models(key)
     if normalized == "mistral":
         return _list_mistral_models(key)
+    if normalized == "openrouter":
+        return _list_openrouter_models(key)
     raise ProviderClientError(
         f"Provider '{provider}' is not supported for hosted model discovery yet."
     )
@@ -71,6 +73,31 @@ def _list_mistral_models(api_key: str) -> list[str]:
     )
     if not models:
         raise ProviderClientError("No compatible Mistral chat models were returned.")
+    return models
+
+
+def _list_openrouter_models(api_key: str) -> list[str]:
+    _fetch_json(
+        "https://openrouter.ai/api/v1/key",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    payload = _fetch_json(
+        "https://openrouter.ai/api/v1/models",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    rows = payload.get("data", [])
+    if not isinstance(rows, list):
+        raise ProviderClientError("Unexpected OpenRouter response format.")
+    models = sorted(
+        {
+            str(item.get("id", "")).strip()
+            for item in rows
+            if isinstance(item, dict)
+            and _is_openrouter_chat_model(str(item.get("id", "")).strip())
+        }
+    )
+    if not models:
+        raise ProviderClientError("No compatible OpenRouter chat models were returned.")
     return models
 
 
@@ -135,4 +162,19 @@ def _is_mistral_chat_model(model_id: str) -> bool:
         return False
     lowered = model_id.lower()
     blocked_terms = ("embed", "moderation")
+    return not any(term in lowered for term in blocked_terms)
+
+
+def _is_openrouter_chat_model(model_id: str) -> bool:
+    if not model_id:
+        return False
+    lowered = model_id.lower()
+    blocked_terms = (
+        "embedding",
+        "embed",
+        "moderation",
+        "whisper",
+        "tts",
+        "image",
+    )
     return not any(term in lowered for term in blocked_terms)

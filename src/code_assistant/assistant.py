@@ -122,11 +122,12 @@ class CodeAssistant:
         key_var_by_provider = {
             "mistral": "MISTRAL_API_KEY",
             "openai": "OPENAI_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
         }
         key_var = key_var_by_provider.get(provider)
         if not key_var:
             raise RuntimeError(
-                f"Unsupported provider '{provider}'. Supported providers are: mistral, openai, local."
+                f"Unsupported provider '{provider}'. Supported providers are: mistral, openai, openrouter, local."
             )
         api_key = os.getenv(key_var)
         if not api_key:
@@ -168,8 +169,30 @@ class CodeAssistant:
                 kwargs.pop("api_key", None)
                 kwargs["openai_api_key"] = api_key
                 return ChatOpenAI(**kwargs)
+        if self.provider == "openrouter":
+            api_key = self._resolve_api_key("openrouter")
+            try:
+                from langchain_openai import ChatOpenAI
+            except ModuleNotFoundError as exc:
+                raise RuntimeError(
+                    "OpenRouter provider requires langchain-openai. Install dependencies from requirements.txt."
+                ) from exc
+            kwargs = {
+                "model": self.model_name,
+                "temperature": self.temperature,
+                "api_key": api_key,
+                "base_url": "https://openrouter.ai/api/v1",
+            }
+            try:
+                return ChatOpenAI(**kwargs)
+            except TypeError:
+                kwargs.pop("api_key", None)
+                kwargs["openai_api_key"] = api_key
+                if "base_url" in kwargs:
+                    kwargs["openai_api_base"] = kwargs.pop("base_url")
+                return ChatOpenAI(**kwargs)
         raise RuntimeError(
-            f"Unsupported provider '{self.provider}'. Supported providers are: mistral, openai, local."
+            f"Unsupported provider '{self.provider}'. Supported providers are: mistral, openai, openrouter, local."
         )
 
     def _build_chain(self):

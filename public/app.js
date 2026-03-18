@@ -1,6 +1,6 @@
 const DEFAULT_APP_CONFIG = {
   defaultProvider: "mistral",
-  allowedProviders: ["openai", "mistral"],
+  allowedProviders: ["openai", "openrouter", "mistral"],
   authRequired: false,
   maxIterationsCap: 3,
   validationTimeoutCap: 5,
@@ -29,11 +29,13 @@ const APP_STATE = {
 
 const MODEL_OPTIONS = {
   openai: ["gpt-5.1", "gpt-5", "gpt-4.1"],
+  openrouter: ["openai/gpt-4.1", "anthropic/claude-3.5-sonnet", "google/gemini-2.5-pro"],
   mistral: ["codestral-latest", "mistral-medium-latest", "mistral-small-latest"]
 };
 
 const DEFAULT_MODEL_BY_PROVIDER = {
   openai: "gpt-5.1",
+  openrouter: "openai/gpt-4.1",
   mistral: "mistral-medium-latest"
 };
 
@@ -236,8 +238,12 @@ async function refreshProviderModels(provider, preferredModel = "") {
     const payload = await requestJson(path);
     if (Array.isArray(payload.models) && payload.models.length > 0) {
       const curated = MODEL_OPTIONS[provider] || [];
-      const filtered = payload.models.filter((model) => curated.includes(model));
-      APP_STATE.modelsByProvider[provider] = filtered.length > 0 ? filtered : curated;
+      APP_STATE.modelsByProvider[provider] = payload.source === "saved_key"
+        ? payload.models
+        : (() => {
+            const filtered = payload.models.filter((model) => curated.includes(model));
+            return filtered.length > 0 ? filtered : curated;
+          })();
     }
   } catch (err) {
     addLog(`Model sync failed: ${err.message || "request failed"}`);
@@ -280,9 +286,7 @@ async function saveApiKey() {
     });
     await loadSavedKeys(provider, payload.key && payload.key.key_id ? payload.key.key_id : "");
     if (Array.isArray(payload.models) && payload.models.length > 0) {
-      const curated = MODEL_OPTIONS[provider] || [];
-      const filtered = payload.models.filter((model) => curated.includes(model));
-      APP_STATE.modelsByProvider[provider] = filtered.length > 0 ? filtered : curated;
+      APP_STATE.modelsByProvider[provider] = payload.models;
     }
     setModelOptionsForProvider(provider, valueOf("modelSel", defaultModelForProvider(provider)));
     updatePills();
@@ -650,7 +654,7 @@ function setSliderCaps(config) {
 
 function applyProviders(config) {
   const providerSel = document.getElementById("providerSel");
-  const allowed = new Set(config.allowedProviders || ["mistral", "openai"]);
+  const allowed = new Set(config.allowedProviders || ["mistral", "openai", "openrouter"]);
   Array.from(providerSel.options).forEach((option) => {
     option.hidden = !allowed.has(option.value);
     option.disabled = !allowed.has(option.value);

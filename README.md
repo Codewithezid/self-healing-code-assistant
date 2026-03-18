@@ -10,6 +10,7 @@ The repository supports two ways to use it:
 ## Highlights
 
 - Generates structured code solutions with OpenAI, Mistral, or a local Hugging Face model
+  (and OpenRouter when enabled)
 - Validates generated code in a subprocess with a timeout
 - Retries failed generations up to a configurable limit
 - Optionally retrieves project-aware context from a local Qdrant RAG index
@@ -42,7 +43,7 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Set at least one hosted key in `.env` (`OPENAI_API_KEY` or `MISTRAL_API_KEY`).
+Set at least one hosted key in `.env` (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or `MISTRAL_API_KEY`).
 To persist user-added keys safely, set `CODE_ASSISTANT_USER_KEYS_SECRET` to a strong secret value.
 If you want project-aware retrieval, build the local index once:
 

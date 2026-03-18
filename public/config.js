@@ -1,6 +1,6 @@
 window.APP_CONFIG = window.APP_CONFIG || {
   defaultProvider: "mistral",
-  allowedProviders: ["openai", "mistral"],
+  allowedProviders: ["openai", "openrouter", "mistral"],
   authRequired: false,
   maxIterationsCap: 3,
   validationTimeoutCap: 5,

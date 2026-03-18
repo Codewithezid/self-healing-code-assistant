@@ -41,6 +41,8 @@ def _provider_is_configured(provider: str) -> bool:
         return bool(os.getenv("OPENAI_API_KEY", "").strip())
     if provider == "mistral":
         return bool(os.getenv("MISTRAL_API_KEY", "").strip())
+    if provider == "openrouter":
+        return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
     if provider == "local":
         return True
     return False
@@ -91,7 +93,7 @@ def get_settings() -> BackendSettings:
     public_dir = project_root / "public"
     allowed_providers = _split_csv(
         os.getenv("CODE_ASSISTANT_ALLOWED_PROVIDERS"),
-        default=("mistral", "openai"),
+        default=("mistral", "openai", "openrouter"),
     )
     default_provider = os.getenv("CODE_ASSISTANT_DEFAULT_PROVIDER", allowed_providers[0]).strip() or allowed_providers[0]
     if default_provider not in allowed_providers:

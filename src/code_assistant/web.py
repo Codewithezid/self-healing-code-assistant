@@ -32,7 +32,7 @@ warnings.filterwarnings(
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1)
     runtime_profile: Literal["custom", "fast", "balanced", "accurate"] = "custom"
-    provider: Literal["mistral", "openai", "local"] = "mistral"
+    provider: str = "mistral"
     model: str = "mistral-medium-latest"
     local_model: str = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
     max_iterations: int = Field(default=3, ge=1, le=10)
@@ -312,6 +312,7 @@ def create_app() -> FastAPI:
         env_key_name = {
             "openai": "OPENAI_API_KEY",
             "mistral": "MISTRAL_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
         }.get(normalized_provider, "")
         env_key = ""
         if env_key_name:
