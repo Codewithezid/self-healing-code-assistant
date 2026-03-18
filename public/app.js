@@ -627,9 +627,6 @@ function updateStats(data) {
 function reflectEvents(data, showEvents) {
   donePipe();
   addLog(`Completed in ${data.iterations} iteration(s) using ${data.provider}.`);
-  if (data.tracing_requested) {
-    addLog("Tracing was requested. Actual LangSmith traces still depend on backend LANGCHAIN_* environment settings.");
-  }
   if (showEvents && Array.isArray(data.events)) {
     data.events.forEach((event) => addLog(`${event.stage}: ${event.detail}`));
   }
@@ -765,7 +762,7 @@ async function send() {
     validation_timeout: Number(valueOf("timeoutR", "5")),
     show_events: checkedOf("showEvents", false),
     json_mode: checkedOf("jsonToggle", false),
-    tracing: checkedOf("tracing", false),
+    tracing: false,
     rag_enabled: checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled),
     corrective_rag_mode: valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode),
     runtime_profile: valueOf("runtimeProfile", APP_STATE.config.defaultRuntimeProfile)
