@@ -21,7 +21,6 @@
     </div>
     <div class="topbar-right">
       <button class="tbtn" type="button" onclick="clearAll()">Clear chat</button>
-      <button class="tbtn" id="jsonBtn" type="button" onclick="toggleJson()">JSON mode</button>
       <button class="tbtn fill" type="button" onclick="clearAll()">New session</button>
     </div>
   </div>
@@ -108,10 +107,6 @@
           <span class="toggle-text">Show graph events</span>
           <label class="sw"><input type="checkbox" id="showEvents" /><span class="sw-track"></span></label>
         </div>
-        <div class="toggle-field">
-          <span class="toggle-text">JSON output</span>
-          <label class="sw"><input type="checkbox" id="jsonToggle" onchange="syncJson()" /><span class="sw-track"></span></label>
-        </div>
       </div>
     </aside>
 
@@ -159,7 +154,6 @@
                 <span class="hint-pill" id="pi">3 retries</span>
                 <span class="hint-pill" id="pr">rag</span>
                 <span class="hint-pill" id="pc">balanced</span>
-                <span class="hint-pill" id="pj">json</span>
               </div>
               <button class="send-btn" id="sendBtn" type="button" onclick="send()">
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">

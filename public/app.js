@@ -20,7 +20,6 @@ const APP_STATE = {
   applyingProfile: false,
   qCount: 0,
   tkN: 0,
-  jMode: false,
   ragMode: false,
   keysByProvider: {},
   modelsByProvider: {},
@@ -312,27 +311,6 @@ async function removeSelectedApiKey() {
   } catch (err) {
     addLog(`Key delete failed: ${err.message || "request failed"}`);
     addErrMsg(err.message || "Failed to delete key.");
-  }
-}
-
-function toggleJson() {
-  const cb = byId("jsonToggle");
-  if (!cb) {
-    return;
-  }
-  cb.checked = !cb.checked;
-  syncJson();
-}
-
-function syncJson() {
-  APP_STATE.jMode = checkedOf("jsonToggle", false);
-  const button = byId("jsonBtn");
-  if (button) {
-    button.style.cssText = APP_STATE.jMode ? "background:var(--ink);color:var(--paper);border-color:var(--ink)" : "";
-  }
-  const jsonPill = byId("pj");
-  if (jsonPill) {
-    jsonPill.classList.toggle("active", APP_STATE.jMode);
   }
 }
 
@@ -761,7 +739,7 @@ async function send() {
     max_iterations: Number(valueOf("maxIter", "3")),
     validation_timeout: Number(valueOf("timeoutR", "5")),
     show_events: checkedOf("showEvents", false),
-    json_mode: checkedOf("jsonToggle", false),
+    json_mode: false,
     tracing: false,
     rag_enabled: checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled),
     corrective_rag_mode: valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode),
@@ -822,7 +800,6 @@ async function boot() {
   }
 
   updatePills();
-  syncJson();
   syncRag();
 
   try {
