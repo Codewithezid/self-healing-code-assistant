@@ -46,15 +46,18 @@
             <option>codestral-latest</option>
           </select>
         </div>
-        <div class="field" id="savedKeyField" style="display:none">
+        <div class="field key-field" id="savedKeyField" style="display:none">
           <label class="field-label" for="savedKeySel">Saved key</label>
-          <div class="range-row">
-            <select class="field-select" id="savedKeySel" onchange="handleSavedKeyChange()">
-              <option value="" disabled selected>no saved keys</option>
+          <div class="key-row">
+            <select class="field-select key-select" id="savedKeySel" onchange="handleSavedKeyChange()">
+              <option value="" disabled selected>No saved keys yet</option>
             </select>
-            <button class="tbtn" type="button" onclick="saveApiKey()">+ Add key</button>
-            <button class="tbtn" type="button" onclick="removeSelectedApiKey()">Remove</button>
+            <div class="key-actions">
+              <button class="tbtn key-btn add" type="button" onclick="saveApiKey()">+ Add key</button>
+              <button class="tbtn key-btn remove" type="button" onclick="removeSelectedApiKey()">Remove</button>
+            </div>
           </div>
+          <p class="field-help">Use your own provider key for this session.</p>
         </div>
         <div class="field" id="localField" style="display:none">
           <label class="field-label" for="localPath">Local model / adapter path</label>

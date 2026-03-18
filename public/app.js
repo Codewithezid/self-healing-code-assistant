@@ -192,7 +192,7 @@ function populateSavedKeys(provider, preferredKeyId = "") {
   }
   const keys = APP_STATE.keysByProvider[provider] || [];
   const options = keys.length === 0
-    ? ['<option value="" disabled selected>no saved keys</option>']
+    ? ['<option value="" disabled selected>No saved keys yet</option>']
     : keys.map((item) => {
       const title = `${item.label} (${item.masked_key})`;
       return `<option value="${esc(item.key_id)}">${esc(title)}</option>`;
