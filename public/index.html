@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Code Assistant - LangGraph + Mistral</title>
+<title>Code Assistant - LangGraph + Hosted Models</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link
@@ -33,7 +33,8 @@
         <div class="field">
           <label class="field-label" for="providerSel">Provider</label>
           <select class="field-select" id="providerSel" onchange="handleProvider()">
-            <option value="mistral">mistral (hosted)</option>
+            <option value="openai">openai (hosted)</option>
+            <option value="mistral" selected>mistral (hosted)</option>
             <option value="local">local (HuggingFace)</option>
           </select>
         </div>
@@ -41,8 +42,7 @@
           <label class="field-label" for="modelSel">Model</label>
           <select class="field-select" id="modelSel" onchange="markRuntimeProfileCustom();updatePills()">
             <option>mistral-small-latest</option>
-            <option>mistral-medium-latest</option>
-            <option selected>mistral-large-latest</option>
+            <option selected>mistral-medium-latest</option>
             <option>codestral-latest</option>
           </select>
         </div>
@@ -147,7 +147,7 @@
             <div class="input-row">
               <div class="input-hints">
                 <span class="hint-pill active" id="pp">mistral</span>
-                <span class="hint-pill active" id="pm">mistral-large-latest</span>
+                <span class="hint-pill active" id="pm">mistral-medium-latest</span>
                 <span class="hint-pill" id="pf">custom</span>
                 <span class="hint-pill" id="pi">3 retries</span>
                 <span class="hint-pill" id="pr">rag</span>

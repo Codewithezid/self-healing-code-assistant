@@ -39,12 +39,12 @@ class GraphState(TypedDict):
 
 
 class CodeAssistant:
-    """Self-correcting code assistant backed by Mistral and LangGraph."""
+    """Self-correcting code assistant backed by hosted LLMs and LangGraph."""
 
     def __init__(
         self,
         *,
-        model_name: str = "mistral-large-latest",
+        model_name: str = "mistral-medium-latest",
         temperature: float = 0.0,
         max_iterations: int = 3,
         validation_timeout_seconds: int = 5,
@@ -115,13 +115,45 @@ class CodeAssistant:
         self._graph = self._build_graph()
 
     @staticmethod
-    def _require_api_key() -> str:
-        api_key = os.getenv("MISTRAL_API_KEY")
+    def _require_api_key(provider: str) -> str:
+        key_var_by_provider = {
+            "mistral": "MISTRAL_API_KEY",
+            "openai": "OPENAI_API_KEY",
+        }
+        key_var = key_var_by_provider.get(provider)
+        if not key_var:
+            raise RuntimeError(
+                f"Unsupported provider '{provider}'. Supported providers are: mistral, openai, local."
+            )
+        api_key = os.getenv(key_var)
         if not api_key:
             raise RuntimeError(
-                "MISTRAL_API_KEY is not set. Add it to your environment or a local .env file."
+                f"{key_var} is not set. Add it to your environment or a local .env file."
             )
         return api_key
+
+    def _build_remote_llm(self):
+        if self.provider == "mistral":
+            self._require_api_key("mistral")
+            return ChatMistralAI(
+                model=self.model_name,
+                temperature=self.temperature,
+            )
+        if self.provider == "openai":
+            self._require_api_key("openai")
+            try:
+                from langchain_openai import ChatOpenAI
+            except ModuleNotFoundError as exc:
+                raise RuntimeError(
+                    "OpenAI provider requires langchain-openai. Install dependencies from requirements.txt."
+                ) from exc
+            return ChatOpenAI(
+                model=self.model_name,
+                temperature=self.temperature,
+            )
+        raise RuntimeError(
+            f"Unsupported provider '{self.provider}'. Supported providers are: mistral, openai, local."
+        )
 
     def _build_chain(self):
         if self.provider == "local":
@@ -129,12 +161,7 @@ class CodeAssistant:
                 model_name=self.local_model_name,
                 max_new_tokens=self.local_max_new_tokens,
             )
-        self._require_api_key()
-
-        llm = ChatMistralAI(
-            model=self.model_name,
-            temperature=self.temperature,
-        )
+        llm = self._build_remote_llm()
         prompt = ChatPromptTemplate.from_messages(
             [
                 (
@@ -164,12 +191,7 @@ class CodeAssistant:
     def _build_fallback_components(self):
         if self.provider == "local":
             return None, None
-        self._require_api_key()
-
-        llm = ChatMistralAI(
-            model=self.model_name,
-            temperature=self.temperature,
-        )
+        llm = self._build_remote_llm()
         prompt = ChatPromptTemplate.from_messages(
             [
                 (

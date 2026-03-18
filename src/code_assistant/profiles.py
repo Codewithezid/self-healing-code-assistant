@@ -27,7 +27,7 @@ RUNTIME_PROFILES: dict[str, RuntimeProfile] = {
     "balanced": RuntimeProfile(
         name="balanced",
         provider="mistral",
-        model="mistral-large-latest",
+        model="mistral-medium-latest",
         rag_enabled=True,
         corrective_rag_mode="balanced",
         max_iterations=2,
@@ -36,7 +36,7 @@ RUNTIME_PROFILES: dict[str, RuntimeProfile] = {
     "accurate": RuntimeProfile(
         name="accurate",
         provider="mistral",
-        model="mistral-large-latest",
+        model="mistral-medium-latest",
         rag_enabled=True,
         corrective_rag_mode="aggressive",
         max_iterations=3,

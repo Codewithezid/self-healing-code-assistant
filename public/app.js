@@ -1,6 +1,6 @@
 const DEFAULT_APP_CONFIG = {
   defaultProvider: "mistral",
-  allowedProviders: ["mistral"],
+  allowedProviders: ["openai", "mistral"],
   authRequired: false,
   maxIterationsCap: 3,
   validationTimeoutCap: 5,
@@ -21,6 +21,39 @@ const APP_STATE = {
   ragMode: false,
   config: { ...DEFAULT_APP_CONFIG, ...(window.APP_CONFIG || {}) }
 };
+
+const MODEL_OPTIONS = {
+  openai: ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1-nano"],
+  mistral: ["mistral-small-latest", "mistral-medium-latest", "codestral-latest"]
+};
+
+const DEFAULT_MODEL_BY_PROVIDER = {
+  openai: "gpt-4.1-mini",
+  mistral: "mistral-medium-latest"
+};
+
+function defaultModelForProvider(provider) {
+  return DEFAULT_MODEL_BY_PROVIDER[provider] || "mistral-medium-latest";
+}
+
+function setModelOptionsForProvider(provider, preferredModel = "") {
+  const modelSel = byId("modelSel");
+  if (!modelSel) {
+    return;
+  }
+  if (provider === "local") {
+    modelSel.innerHTML = "";
+    return;
+  }
+  const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.mistral;
+  modelSel.innerHTML = options
+    .map((model) => `<option value="${esc(model)}">${esc(model)}</option>`)
+    .join("");
+  const nextModel = options.includes(preferredModel)
+    ? preferredModel
+    : defaultModelForProvider(provider);
+  modelSel.value = nextModel;
+}
 
 function byId(id) {
   return document.getElementById(id);
@@ -69,12 +102,14 @@ function handleProvider(preserveProfile = false) {
   if (!preserveProfile) {
     markRuntimeProfileCustom();
   }
-  const provider = valueOf("providerSel", "mistral");
+  const provider = valueOf("providerSel", APP_STATE.config.defaultProvider || "mistral");
+  const currentModel = valueOf("modelSel", "");
+  setModelOptionsForProvider(provider, currentModel);
   const modelField = byId("modelField");
   const localField = byId("localField");
   const providerPill = byId("pp");
   if (modelField) {
-    modelField.style.display = provider === "mistral" ? "" : "none";
+    modelField.style.display = provider === "local" ? "none" : "";
   }
   if (localField) {
     localField.style.display = provider === "local" ? "" : "none";
@@ -96,9 +131,9 @@ function markRuntimeProfileCustom() {
 }
 
 function updatePills() {
-  const provider = valueOf("providerSel", "mistral");
-  const model = provider === "mistral"
-    ? valueOf("modelSel", "mistral-large-latest")
+  const provider = valueOf("providerSel", APP_STATE.config.defaultProvider || "mistral");
+  const model = provider !== "local"
+    ? valueOf("modelSel", defaultModelForProvider(provider))
     : valueOf("localPath", "Qwen/Qwen2.5-Coder-0.5B-Instruct").split("/").pop();
   const modelPill = byId("pm");
   const retryPill = byId("pi");
@@ -169,11 +204,12 @@ function syncCorrectiveRagMode(preserveProfile = false) {
 
 function applyRuntimeProfile() {
   const profile = valueOf("runtimeProfile", APP_STATE.config.defaultRuntimeProfile);
+  let profileModel = "";
   APP_STATE.applyingProfile = true;
   try {
     if (profile === "fast") {
       byId("providerSel").value = "mistral";
-      byId("modelSel").value = "codestral-latest";
+      profileModel = "codestral-latest";
       byId("maxIter").value = "1";
       byId("iN").textContent = "1";
       byId("timeoutR").value = "3";
@@ -182,7 +218,7 @@ function applyRuntimeProfile() {
       byId("correctiveRagMode").value = "fast";
     } else if (profile === "balanced") {
       byId("providerSel").value = "mistral";
-      byId("modelSel").value = "mistral-large-latest";
+      profileModel = "mistral-medium-latest";
       byId("maxIter").value = "2";
       byId("iN").textContent = "2";
       byId("timeoutR").value = "5";
@@ -191,7 +227,7 @@ function applyRuntimeProfile() {
       byId("correctiveRagMode").value = "balanced";
     } else if (profile === "accurate") {
       byId("providerSel").value = "mistral";
-      byId("modelSel").value = "mistral-large-latest";
+      profileModel = "mistral-medium-latest";
       byId("maxIter").value = "3";
       byId("iN").textContent = "3";
       byId("timeoutR").value = "5";
@@ -203,6 +239,9 @@ function applyRuntimeProfile() {
     APP_STATE.applyingProfile = false;
   }
   handleProvider(true);
+  if (profileModel) {
+    byId("modelSel").value = profileModel;
+  }
   syncRag(true);
   syncCorrectiveRagMode(true);
 }
@@ -458,7 +497,7 @@ function setSliderCaps(config) {
 
 function applyProviders(config) {
   const providerSel = document.getElementById("providerSel");
-  const allowed = new Set(config.allowedProviders || ["mistral"]);
+  const allowed = new Set(config.allowedProviders || ["mistral", "openai"]);
   Array.from(providerSel.options).forEach((option) => {
     option.hidden = !allowed.has(option.value);
     option.disabled = !allowed.has(option.value);
@@ -561,8 +600,8 @@ async function send() {
 
   const payload = {
     prompt,
-    provider: valueOf("providerSel", "mistral"),
-    model: valueOf("modelSel", "mistral-large-latest"),
+    provider: valueOf("providerSel", APP_STATE.config.defaultProvider || "mistral"),
+    model: valueOf("modelSel", defaultModelForProvider(valueOf("providerSel", APP_STATE.config.defaultProvider || "mistral"))),
     local_model: valueOf("localPath", "Qwen/Qwen2.5-Coder-0.5B-Instruct"),
     max_iterations: Number(valueOf("maxIter", "3")),
     validation_timeout: Number(valueOf("timeoutR", "5")),

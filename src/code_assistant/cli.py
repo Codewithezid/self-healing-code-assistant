@@ -20,12 +20,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="mistral-large-latest",
-        help="Remote model name to use when provider=mistral.",
+        default="mistral-medium-latest",
+        help="Remote model name to use when provider is mistral or openai.",
     )
     parser.add_argument(
         "--provider",
-        choices=["mistral", "local"],
+        choices=["mistral", "openai", "local"],
         default="mistral",
         help="Model provider to use.",
     )

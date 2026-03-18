@@ -9,7 +9,7 @@ The repository supports two ways to use it:
 
 ## Highlights
 
-- Generates structured code solutions with Mistral or a local Hugging Face model
+- Generates structured code solutions with OpenAI, Mistral, or a local Hugging Face model
 - Validates generated code in a subprocess with a timeout
 - Retries failed generations up to a configurable limit
 - Optionally retrieves project-aware context from a local Qdrant RAG index
@@ -41,7 +41,7 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Set `MISTRAL_API_KEY` in `.env`.
+Set at least one hosted key in `.env` (`OPENAI_API_KEY` or `MISTRAL_API_KEY`).
 If you want project-aware retrieval, build the local index once:
 
 ```powershell

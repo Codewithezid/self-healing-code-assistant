@@ -25,8 +25,8 @@ warnings.filterwarnings(
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1)
     runtime_profile: Literal["custom", "fast", "balanced", "accurate"] = "custom"
-    provider: Literal["mistral", "local"] = "mistral"
-    model: str = "mistral-large-latest"
+    provider: Literal["mistral", "openai", "local"] = "mistral"
+    model: str = "mistral-medium-latest"
     local_model: str = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
     max_iterations: int = Field(default=3, ge=1, le=10)
     validation_timeout: int = Field(default=5, ge=1, le=30)

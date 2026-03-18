@@ -36,6 +36,16 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _provider_is_configured(provider: str) -> bool:
+    if provider == "openai":
+        return bool(os.getenv("OPENAI_API_KEY", "").strip())
+    if provider == "mistral":
+        return bool(os.getenv("MISTRAL_API_KEY", "").strip())
+    if provider == "local":
+        return True
+    return False
+
+
 @dataclass(frozen=True)
 class BackendSettings:
     project_root: Path
@@ -77,11 +87,18 @@ def get_settings() -> BackendSettings:
     public_dir = project_root / "public"
     allowed_providers = _split_csv(
         os.getenv("CODE_ASSISTANT_ALLOWED_PROVIDERS"),
-        default=("mistral",),
+        default=("mistral", "openai"),
     )
     default_provider = os.getenv("CODE_ASSISTANT_DEFAULT_PROVIDER", allowed_providers[0]).strip() or allowed_providers[0]
     if default_provider not in allowed_providers:
         default_provider = allowed_providers[0]
+    if not _provider_is_configured(default_provider):
+        configured_provider = next(
+            (provider for provider in allowed_providers if _provider_is_configured(provider)),
+            None,
+        )
+        if configured_provider:
+            default_provider = configured_provider
     default_runtime_profile = os.getenv("CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE", "custom").strip().lower() or "custom"
     if default_runtime_profile not in {"custom", "fast", "balanced", "accurate"}:
         default_runtime_profile = "custom"
