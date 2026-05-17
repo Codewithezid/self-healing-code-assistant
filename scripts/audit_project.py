@@ -36,15 +36,22 @@ class FakeChain:
 @contextmanager
 def patched_build_chain(responses: list[CodeSolution]):
     original = CodeAssistant._build_chain
+    original_fallback = CodeAssistant._build_fallback_components
 
     def fake_build_chain(self: CodeAssistant) -> FakeChain:
         return FakeChain(responses)
 
+    def fake_build_fallback_components(self: CodeAssistant):
+        # Prevent mocked audit checks from requiring hosted-provider API keys.
+        return None, None
+
     CodeAssistant._build_chain = fake_build_chain
+    CodeAssistant._build_fallback_components = fake_build_fallback_components
     try:
         yield
     finally:
         CodeAssistant._build_chain = original
+        CodeAssistant._build_fallback_components = original_fallback
 
 
 def run_command(args: list[str]) -> tuple[int, str, str]:
