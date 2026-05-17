@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+import certifi
 import requests
 from dotenv import load_dotenv
 
@@ -49,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=1e-4,
         help="Learning rate hyperparameter.",
     )
+    parser.add_argument(
+        "--training-steps",
+        type=int,
+        default=300,
+        help="Number of optimizer steps for fine-tuning.",
+    )
     return parser
 
 
@@ -63,12 +70,20 @@ def auth_headers(api_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"}
 
 
+def _session() -> requests.Session:
+    session = requests.Session()
+    insecure_ssl = os.getenv("CODE_ASSISTANT_INSECURE_SSL", "").strip().lower() in {"1", "true", "yes", "on"}
+    session.verify = False if insecure_ssl else certifi.where()
+    return session
+
+
 def upload_file(api_key: str, path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(path)
     content_type = mimetypes.guess_type(path.name)[0] or "application/jsonl"
+    session = _session()
     with path.open("rb") as handle:
-        response = requests.post(
+        response = session.post(
             "https://api.mistral.ai/v1/files",
             headers=auth_headers(api_key),
             data={"purpose": "fine-tune"},
@@ -86,19 +101,21 @@ def create_job(
     training_file_id: str,
     validation_file_id: str,
     learning_rate: float,
+    training_steps: int,
 ) -> dict[str, Any]:
+    session = _session()
     payload = {
         "model": model,
         "training_files": [{"file_id": training_file_id, "weight": 1}],
         "validation_files": [validation_file_id],
         "hyperparameters": {
-            "training_steps": 10,
+            "training_steps": training_steps,
             "learning_rate": learning_rate,
         },
         "auto_start": False,
         "invalid_sample_skip_percentage": 0.05,
     }
-    response = requests.post(
+    response = session.post(
         "https://api.mistral.ai/v1/fine_tuning/jobs",
         headers={**auth_headers(api_key), "Content-Type": "application/json"},
         json=payload,
@@ -112,7 +129,8 @@ def create_job(
 
 
 def start_job(api_key: str, job_id: str) -> dict[str, Any]:
-    response = requests.post(
+    session = _session()
+    response = session.post(
         f"https://api.mistral.ai/v1/fine_tuning/jobs/{job_id}/start",
         headers=auth_headers(api_key),
         timeout=120,
@@ -139,6 +157,7 @@ def main() -> int:
         training_file_id=train_file["id"],
         validation_file_id=validation_file["id"],
         learning_rate=args.learning_rate,
+        training_steps=args.training_steps,
     )
 
     output = {

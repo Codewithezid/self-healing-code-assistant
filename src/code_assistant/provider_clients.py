@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
+import ssl
 import urllib.error
 import urllib.request
 from typing import Any
-
 
 class ProviderClientError(RuntimeError):
     pass
@@ -103,8 +104,12 @@ def _list_openrouter_models(api_key: str) -> list[str]:
 
 def _fetch_json(url: str, *, headers: dict[str, str], timeout_seconds: int = 20) -> dict[str, Any]:
     request = urllib.request.Request(url, headers=headers)
+    ssl_context = ssl.create_default_context()
+    if os.getenv("CODE_ASSISTANT_INSECURE_SSL", "").strip().lower() in {"1", "true", "yes", "on"}:
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+        with urllib.request.urlopen(request, timeout=timeout_seconds, context=ssl_context) as response:
             raw = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")

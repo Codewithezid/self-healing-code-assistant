@@ -10,3 +10,7 @@ qdrant-client>=1.17.1
 fastapi>=0.115.0
 uvicorn>=0.30.0
 cryptography>=42.0.0
+opendataloader-pdf>=2.2.1
+truststore>=0.10.1
+pypdf>=5.9.0
+python-multipart>=0.0.20

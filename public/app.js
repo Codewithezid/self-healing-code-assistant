@@ -8,7 +8,7 @@ const DEFAULT_APP_CONFIG = {
   ragDefaultEnabled: false,
   correctiveRagModes: ["fast", "balanced", "aggressive"],
   correctiveRagDefaultMode: "balanced",
-  runtimeProfiles: ["custom", "fast", "balanced", "accurate"],
+  runtimeProfiles: ["custom", "fast", "balanced", "accurate", "goated"],
   defaultRuntimeProfile: "custom",
   userKeysEnabled: false,
   userKeysPersistent: false,
@@ -17,10 +17,13 @@ const DEFAULT_APP_CONFIG = {
 
 const APP_STATE = {
   running: false,
+  arenaRunning: false,
+  arenaMode: false,
   applyingProfile: false,
   qCount: 0,
   tkN: 0,
   ragMode: false,
+  attachments: [],
   keysByProvider: {},
   modelsByProvider: {},
   config: { ...DEFAULT_APP_CONFIG, ...(window.APP_CONFIG || {}) }
@@ -70,6 +73,77 @@ function byId(id) {
 function valueOf(id, fallback = "") {
   const el = byId(id);
   return el && "value" in el ? el.value : fallback;
+}
+
+function updateAttachmentModePill() {
+  const mode = valueOf("attachMode", "rag_only");
+  const pill = byId("pa");
+  if (!pill) {
+    return;
+  }
+  if (!APP_STATE.attachments.length) {
+    pill.textContent = "no files";
+    pill.classList.remove("active");
+    return;
+  }
+  pill.textContent = mode === "both" ? `files:${APP_STATE.attachments.length} both` : `files:${APP_STATE.attachments.length} rag`;
+  pill.classList.add("active");
+}
+
+function renderAttachmentChips() {
+  const strip = byId("attachmentStrip");
+  const list = byId("attachmentList");
+  if (!strip || !list) {
+    return;
+  }
+  if (!APP_STATE.attachments.length) {
+    strip.style.display = "none";
+    list.innerHTML = "";
+    updateAttachmentModePill();
+    return;
+  }
+  strip.style.display = "";
+  list.innerHTML = APP_STATE.attachments.map((item, index) => (
+    `<span class="attach-chip" title="${esc(item.filename)}">${esc(item.filename)}<button type="button" onclick="removeAttachment(${index})">×</button></span>`
+  )).join("");
+  updateAttachmentModePill();
+}
+
+function removeAttachment(index) {
+  APP_STATE.attachments.splice(index, 1);
+  renderAttachmentChips();
+}
+
+async function uploadAttachments(files) {
+  if (!files || files.length === 0) {
+    return;
+  }
+  const formData = new FormData();
+  Array.from(files).forEach((file) => formData.append("files", file));
+  const payload = await requestJson("/api/attachments", {
+    method: "POST",
+    body: formData
+  });
+  const rows = Array.isArray(payload.attachments) ? payload.attachments : [];
+  APP_STATE.attachments = rows.map((row) => ({
+    id: row.attachment_id,
+    filename: row.filename,
+    kind: row.kind,
+    charCount: row.char_count,
+    indexed: Boolean(row.indexed_to_qdrant)
+  }));
+  renderAttachmentChips();
+  const indexedCount = rows.filter((row) => row.indexed_to_qdrant).length;
+  addLog(`Attached ${rows.length} file(s). Indexed ${indexedCount}/${rows.length} into Qdrant.`);
+}
+
+function openAttachmentPicker() {
+  const input = byId("attachmentInput");
+  if (!input) {
+    return;
+  }
+  input.value = "";
+  input.click();
 }
 
 function checkedOf(id, fallback = false) {
@@ -369,6 +443,15 @@ function applyRuntimeProfile() {
       byId("tN").textContent = "5";
       byId("ragToggle").checked = true;
       byId("correctiveRagMode").value = "aggressive";
+    } else if (profile === "goated") {
+      byId("providerSel").value = "mistral";
+      profileModel = "mistral-large-latest";
+      byId("maxIter").value = "6";
+      byId("iN").textContent = "6";
+      byId("timeoutR").value = "12";
+      byId("tN").textContent = "12";
+      byId("ragToggle").checked = true;
+      byId("correctiveRagMode").value = "aggressive";
     }
   } finally {
     APP_STATE.applyingProfile = false;
@@ -383,9 +466,30 @@ function applyRuntimeProfile() {
 
 function clearAll() {
   APP_STATE.qCount = 0;
+  APP_STATE.arenaRunning = false;
   document.getElementById("msgs").innerHTML = "";
   document.getElementById("msgs").style.display = "none";
-  document.getElementById("welcome").style.display = "";
+  const arenaRag = byId("arenaMsgsRag");
+  const arenaNormal = byId("arenaMsgsNormal");
+  if (arenaRag) {
+    arenaRag.innerHTML = "";
+  }
+  if (arenaNormal) {
+    arenaNormal.innerHTML = "";
+  }
+  if (APP_STATE.arenaMode) {
+    const arenaWrap = byId("arenaWrap");
+    if (arenaWrap) {
+      arenaWrap.style.display = "";
+    }
+    document.getElementById("welcome").style.display = "none";
+  } else {
+    const arenaWrap = byId("arenaWrap");
+    if (arenaWrap) {
+      arenaWrap.style.display = "none";
+    }
+    document.getElementById("welcome").style.display = "";
+  }
   document.getElementById("sQ").textContent = "0";
   document.getElementById("sI").textContent = "-";
   document.getElementById("sR").textContent = "-";
@@ -393,6 +497,47 @@ function clearAll() {
   resetPipe();
   document.getElementById("actLog").innerHTML =
     '<div class="log-entry"><span class="log-time">--</span><span class="log-txt" style="color:var(--ink4)">No activity yet.</span></div>';
+  APP_STATE.attachments = [];
+  renderAttachmentChips();
+}
+
+function toggleArenaMode() {
+  APP_STATE.arenaMode = !APP_STATE.arenaMode;
+  const arenaBtn = byId("arenaToggleBtn");
+  const arenaWrap = byId("arenaWrap");
+  const chatArea = byId("chatArea");
+  const welcome = byId("welcome");
+  const msgs = byId("msgs");
+  if (arenaBtn) {
+    arenaBtn.classList.toggle("on", APP_STATE.arenaMode);
+  }
+  if (chatArea) {
+    chatArea.classList.toggle("arena-on", APP_STATE.arenaMode);
+  }
+  if (APP_STATE.arenaMode) {
+    if (arenaWrap) {
+      arenaWrap.style.display = "";
+    }
+    if (welcome) {
+      welcome.style.display = "none";
+    }
+    if (msgs) {
+      msgs.style.display = "none";
+    }
+    addLog("Coding Arena enabled: RAG vs Normal side-by-side.");
+  } else {
+    if (arenaWrap) {
+      arenaWrap.style.display = "none";
+    }
+    const hasMessages = msgs && msgs.children.length > 0;
+    if (welcome) {
+      welcome.style.display = hasMessages ? "none" : "";
+    }
+    if (msgs) {
+      msgs.style.display = hasMessages ? "" : "none";
+    }
+    addLog("Coding Arena disabled.");
+  }
 }
 
 function fillExample(btn) {
@@ -543,8 +688,8 @@ function renderAssistantBody(data) {
   chunks.push(mkExec("run", `Validation timeout: ${data.validation_timeout}s`));
   chunks.push(
     mkExec(
-      data.validation_passed ? "ok" : "err",
-      data.validation_passed
+      (data.semantic_validation_passed ?? data.validation_passed) ? "ok" : "err",
+      (data.semantic_validation_passed ?? data.validation_passed)
         ? `Validated successfully after ${data.iterations} iteration(s).`
         : `Reached ${data.iterations} iteration(s). ${data.validation_message}`
     )
@@ -555,6 +700,15 @@ function renderAssistantBody(data) {
   }
   if (data.runtime_profile) {
     chunks.push(`<p><span class="inline-code">profile</span> ${esc(data.runtime_profile)}</p>`);
+  }
+  if (typeof data.confidence_score === "number") {
+    chunks.push(`<p><span class="inline-code">confidence</span> ${esc((data.confidence_score * 100).toFixed(1))}%</p>`);
+  }
+  if (data.traceback_summary) {
+    chunks.push(`<p><span class="inline-code">traceback</span> ${esc(data.traceback_summary)}</p>`);
+  }
+  if (typeof data.hallucination_risk === "number") {
+    chunks.push(`<p><span class="inline-code">hallucination-risk</span> ${esc((data.hallucination_risk * 100).toFixed(1))}%</p>`);
   }
 
   if (data.rag_enabled) {
@@ -583,6 +737,60 @@ function renderAssistantBody(data) {
     chunks.push(events);
   }
 
+  if (data.generated_tests) {
+    chunks.push("<p><span class=\"inline-code\">generated-tests</span> Suggested unit tests:</p>");
+    chunks.push(mkCode("python", data.generated_tests));
+  }
+  if (typeof data.regression_test_passed === "boolean") {
+    chunks.push(mkExec(data.regression_test_passed ? "ok" : "err", data.regression_test_output || "Regression test status unavailable."));
+  }
+  if (data.repair_diff) {
+    chunks.push("<p><span class=\"inline-code\">repair-diff</span> Incremental patch:</p>");
+    chunks.push(mkCode("diff", data.repair_diff));
+  }
+
+  return chunks.join("");
+}
+
+function renderAssistantBodyCompact(data) {
+  const chunks = [];
+  const iterations = Number(data.iterations || 1);
+  const statusText = (data.semantic_validation_passed ?? data.validation_passed) ? "passed" : "failed";
+  chunks.push(`<p><span class="inline-code">status</span> ${statusText} after ${iterations} iteration(s)</p>`);
+
+  if (data.solution && data.solution.prefix) {
+    chunks.push(`<p>${esc(data.solution.prefix)}</p>`);
+  } else {
+    chunks.push("<p>No explanation text was returned by the model. Showing validated code below.</p>");
+  }
+
+  if (data.validation_message) {
+    chunks.push(`<p><span class="inline-code">validation</span> ${esc(data.validation_message)}</p>`);
+  }
+  if (typeof data.confidence_score === "number") {
+    chunks.push(`<p><span class="inline-code">confidence</span> ${esc((data.confidence_score * 100).toFixed(1))}%</p>`);
+  }
+  if (typeof data.hallucination_risk === "number") {
+    chunks.push(`<p><span class="inline-code">hallucination-risk</span> ${esc((data.hallucination_risk * 100).toFixed(1))}%</p>`);
+  }
+
+  if (data.rag_enabled) {
+    const sources = Array.isArray(data.rag_sources) ? data.rag_sources : [];
+    chunks.push(`<p><span class="inline-code">rag-mode</span> ${esc(data.corrective_rag_mode || "balanced")}</p>`);
+    if (sources.length > 0) {
+      chunks.push(`<p><span class="inline-code">sources</span> ${esc(sources.join(", "))}</p>`);
+    }
+  }
+
+  if (Array.isArray(data.events) && data.events.length > 0) {
+    const eventLines = data.events.map((event) => {
+      const attempt = event.iteration ? `attempt ${event.iteration}` : "system";
+      return `<p><span class="inline-code">${esc(attempt)}</span> ${esc(event.stage)} - ${esc(event.detail || "")}</p>`;
+    }).join("");
+    chunks.push(eventLines);
+  }
+
+  chunks.push(mkCode("python", data.combined_code || ""));
   return chunks.join("");
 }
 
@@ -591,15 +799,70 @@ function addAiMsg(data) {
   d.className = "msg-row";
   const tag = (data.model || "").split("/").pop();
   d.innerHTML = `<div class="msg-ai-header"><div class="ai-avatar">lg</div><span class="ai-name">Code Assistant</span><span class="ai-model-tag">${esc(tag)}</span></div><div class="ai-body">${renderAssistantBody(data)}</div>`;
+  const controls = document.createElement("div");
+  controls.className = "input-hints";
+  controls.style.marginTop = "8px";
+  controls.innerHTML = `
+    <span class="hint-pill">Feedback:</span>
+    <button class="tbtn" type="button">Correct</button>
+    <button class="tbtn" type="button">Partial</button>
+    <button class="tbtn" type="button">Wrong</button>
+  `;
+  const buttons = controls.querySelectorAll("button");
+  if (buttons.length === 3) {
+    buttons[0].addEventListener("click", () => submitFeedback(data, "correct", 5));
+    buttons[1].addEventListener("click", () => submitFeedback(data, "partially_correct", 3));
+    buttons[2].addEventListener("click", () => submitFeedback(data, "wrong", 1));
+  }
+  d.appendChild(controls);
   document.getElementById("msgs").appendChild(d);
   attachCopyButtons(d);
   scrollD();
 }
 
+async function submitFeedback(data, verdict, rating) {
+  try {
+    await requestJson("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        thread_id: data.thread_id || "unknown",
+        verdict,
+        rating,
+        provider: data.provider || "unknown",
+        model: data.model || "unknown",
+        runtime_profile: data.runtime_profile || "custom",
+        rag_enabled: Boolean(data.rag_enabled),
+        corrective_rag_mode: data.corrective_rag_mode || "balanced",
+        confidence_score: Number(data.confidence_score || 0),
+        hallucination_risk: Number(data.hallucination_risk || 0),
+        comment: ""
+      })
+    });
+    addLog(`Feedback saved: ${verdict}.`);
+  } catch (err) {
+    addLog(`Feedback save failed: ${err.message || "request failed"}`);
+  }
+}
+
+function addArenaMessage(targetId, role, html) {
+  const mount = byId(targetId);
+  if (!mount) {
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = `arena-msg ${role}`;
+  row.innerHTML = `<div class="bubble">${html}</div>`;
+  mount.appendChild(row);
+  attachCopyButtons(row);
+  mount.scrollTop = mount.scrollHeight;
+}
+
 function updateStats(data) {
   document.getElementById("sI").textContent = data.iterations || "1";
-  document.getElementById("sR").textContent = data.validation_passed ? "success" : "needs fix";
-  setStat(data.validation_passed ? "done" : "error");
+  const passed = (data.semantic_validation_passed ?? data.validation_passed);
+  document.getElementById("sR").textContent = passed ? "success" : "needs fix";
+  setStat(passed ? "done" : "error");
 }
 
 function reflectEvents(data, showEvents) {
@@ -652,7 +915,7 @@ function applyRagConfig(config) {
   if (runtimeProfile) {
     const profiles = Array.isArray(config.runtimeProfiles) && config.runtimeProfiles.length > 0
       ? config.runtimeProfiles
-      : ["custom", "fast", "balanced", "accurate"];
+      : ["custom", "fast", "balanced", "accurate", "goated"];
     runtimeProfile.innerHTML = profiles
       .map((profile) => `<option value="${esc(profile)}">${esc(profile)}</option>`)
       .join("");
@@ -711,7 +974,7 @@ async function requestJson(path, init = {}) {
 }
 
 async function send() {
-  if (APP_STATE.running) {
+  if (APP_STATE.running || APP_STATE.arenaRunning) {
     return;
   }
 
@@ -727,8 +990,23 @@ async function send() {
     return;
   }
 
-  document.getElementById("welcome").style.display = "none";
-  document.getElementById("msgs").style.display = "";
+  if (!APP_STATE.arenaMode) {
+    document.getElementById("welcome").style.display = "none";
+    document.getElementById("msgs").style.display = "";
+  } else {
+    const arenaWrap = byId("arenaWrap");
+    const msgs = byId("msgs");
+    const welcome = byId("welcome");
+    if (arenaWrap) {
+      arenaWrap.style.display = "";
+    }
+    if (msgs) {
+      msgs.style.display = "none";
+    }
+    if (welcome) {
+      welcome.style.display = "none";
+    }
+  }
 
   const payload = {
     prompt,
@@ -743,46 +1021,132 @@ async function send() {
     tracing: false,
     rag_enabled: checkedOf("ragToggle", APP_STATE.config.ragDefaultEnabled),
     corrective_rag_mode: valueOf("correctiveRagMode", APP_STATE.config.correctiveRagDefaultMode),
-    runtime_profile: valueOf("runtimeProfile", APP_STATE.config.defaultRuntimeProfile)
+    runtime_profile: valueOf("runtimeProfile", APP_STATE.config.defaultRuntimeProfile),
+    attachment_ids: APP_STATE.attachments.map((item) => item.id),
+    attachment_mode: valueOf("attachMode", "rag_only")
   };
 
-  addUserMsg(prompt);
+  if (APP_STATE.arenaMode) {
+    addArenaMessage("arenaMsgsRag", "user", esc(prompt));
+    addArenaMessage("arenaMsgsNormal", "user", esc(prompt));
+  } else {
+    addUserMsg(prompt);
+  }
   promptEl.value = "";
   promptEl.style.height = "auto";
   APP_STATE.qCount += 1;
   document.getElementById("sQ").textContent = String(APP_STATE.qCount);
   document.getElementById("sendBtn").disabled = true;
-  APP_STATE.running = true;
+  APP_STATE.running = !APP_STATE.arenaMode;
+  APP_STATE.arenaRunning = APP_STATE.arenaMode;
 
   setStat("running");
   resetPipe();
-  setPipe(payload.rag_enabled ? "retrieve_context" : "generate_code");
+  setPipe(APP_STATE.arenaMode || payload.rag_enabled ? "retrieve_context" : "generate_code");
   addLog(`Query: ${prompt.slice(0, 44)}${prompt.length > 44 ? "..." : ""}`);
 
-  const tk = addThink();
-
+  let tk = "";
   try {
-    const data = await requestJson("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    rmThink(tk);
-
-    setPipe("execute_code");
-    setPipe("check_result");
-    setPipe("retry_or_end");
-    addAiMsg(data);
-    updateStats(data);
-    reflectEvents(data, payload.show_events);
+    if (APP_STATE.arenaMode) {
+      const provider = payload.provider;
+      const model = provider !== "local"
+        ? valueOf("modelSel", defaultModelForProvider(provider))
+        : valueOf("localPath", "Qwen/Qwen2.5-Coder-0.5B-Instruct");
+      const ragModelTag = byId("arenaRagModel");
+      const normalModelTag = byId("arenaNormalModel");
+      if (ragModelTag) {
+        ragModelTag.textContent = model;
+      }
+      if (normalModelTag) {
+        normalModelTag.textContent = model;
+      }
+      addArenaMessage("arenaMsgsRag", "ai", '<div class="arena-loading">running...</div>');
+      addArenaMessage("arenaMsgsNormal", "ai", '<div class="arena-loading">running...</div>');
+      const ragPayload = {
+        ...payload,
+        runtime_profile: "goated",
+        rag_enabled: true,
+        corrective_rag_mode: "aggressive",
+        max_iterations: Math.max(payload.max_iterations, 6),
+        validation_timeout: Math.max(payload.validation_timeout, 12),
+        show_events: true,
+        attachment_ids: payload.attachment_ids,
+        attachment_mode: payload.attachment_mode
+      };
+      const normalPayload = {
+        ...payload,
+        runtime_profile: "custom",
+        rag_enabled: false,
+        corrective_rag_mode: "fast",
+        max_iterations: 1,
+        validation_timeout: Math.min(payload.validation_timeout, 5),
+        show_events: true,
+        attachment_ids: payload.attachment_mode === "both" ? payload.attachment_ids : [],
+        attachment_mode: payload.attachment_mode
+      };
+      const [ragData, normalData] = await Promise.all([
+        requestJson("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(ragPayload)
+        }),
+        requestJson("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(normalPayload)
+        })
+      ]);
+      const ragMount = byId("arenaMsgsRag");
+      const normalMount = byId("arenaMsgsNormal");
+      if (ragMount && ragMount.lastElementChild) {
+        ragMount.lastElementChild.remove();
+      }
+      if (normalMount && normalMount.lastElementChild) {
+        normalMount.lastElementChild.remove();
+      }
+      addArenaMessage("arenaMsgsRag", "ai", renderAssistantBodyCompact(ragData));
+      addArenaMessage("arenaMsgsNormal", "ai", renderAssistantBodyCompact(normalData));
+      setPipe("execute_code");
+      setPipe("check_result");
+      setPipe("retry_or_end");
+      const ragPassed = Boolean(ragData.semantic_validation_passed ?? ragData.validation_passed);
+      const normalPassed = Boolean(normalData.semantic_validation_passed ?? normalData.validation_passed);
+      const bothPassed = ragPassed && normalPassed;
+      document.getElementById("sR").textContent = bothPassed ? "both success" : "check arena";
+      document.getElementById("sI").textContent = `${ragData.iterations || 1}/${normalData.iterations || 1}`;
+      setStat(bothPassed ? "done" : "error");
+      addLog(`Arena done: RAG=${ragPassed ? "ok" : "fail"}, Normal=${normalPassed ? "ok" : "fail"}.`);
+    } else {
+      tk = addThink();
+      const data = await requestJson("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      rmThink(tk);
+      setPipe("execute_code");
+      setPipe("check_result");
+      setPipe("retry_or_end");
+      addAiMsg(data);
+      updateStats(data);
+      reflectEvents(data, payload.show_events);
+    }
   } catch (err) {
-    rmThink(tk);
+    if (tk) {
+      rmThink(tk);
+    }
     setStat("error");
     resetPipe();
-    addErrMsg(err.message || "Something went wrong.");
+    if (APP_STATE.arenaMode) {
+      addArenaMessage("arenaMsgsRag", "ai", mkExec("err", err.message || "Arena request failed."));
+      addArenaMessage("arenaMsgsNormal", "ai", mkExec("err", err.message || "Arena request failed."));
+    } else {
+      addErrMsg(err.message || "Something went wrong.");
+    }
     addLog(`Error: ${err.message || "Request failed."}`);
   } finally {
     APP_STATE.running = false;
+    APP_STATE.arenaRunning = false;
     document.getElementById("sendBtn").disabled = false;
     scrollD();
   }
@@ -792,14 +1156,32 @@ async function boot() {
   APP_STATE.modelsByProvider = { ...MODEL_OPTIONS };
 
   const localPath = byId("localPath");
+  const attachmentInput = byId("attachmentInput");
   if (localPath) {
     localPath.addEventListener("input", () => {
       markRuntimeProfileCustom();
       updatePills();
     });
   }
+  if (attachmentInput) {
+    attachmentInput.addEventListener("change", async (event) => {
+      try {
+        const files = event.target && event.target.files ? event.target.files : [];
+        if (!files || files.length === 0) {
+          return;
+        }
+        await uploadAttachments(files);
+      } catch (err) {
+        addErrMsg(err.message || "Attachment upload failed.");
+        addLog(`Attachment upload failed: ${err.message || "request failed"}`);
+      } finally {
+        event.target.value = "";
+      }
+    });
+  }
 
   updatePills();
+  renderAttachmentChips();
   syncRag();
 
   try {

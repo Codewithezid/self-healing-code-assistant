@@ -42,6 +42,15 @@ RUNTIME_PROFILES: dict[str, RuntimeProfile] = {
         max_iterations=3,
         validation_timeout=5,
     ),
+    "goated": RuntimeProfile(
+        name="goated",
+        provider="mistral",
+        model="mistral-large-latest",
+        rag_enabled=True,
+        corrective_rag_mode="aggressive",
+        max_iterations=6,
+        validation_timeout=12,
+    ),
 }
 
 

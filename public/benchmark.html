@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Code Assistant Benchmark Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .bench-wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .bench-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .bench-card { border: 1px solid var(--line); background: var(--bg1); border-radius: 12px; padding: 14px; }
+    .bench-title { font-weight: 600; margin-bottom: 6px; }
+    .bench-kpi { font-size: 24px; font-weight: 700; }
+    .bench-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+    .bench-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .bench-table th, .bench-table td { border-bottom: 1px solid var(--line); padding: 10px; text-align: left; }
+    .bench-muted { color: var(--ink4); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="wordmark">
+      <span class="wordmark-title">Benchmark Dashboard</span>
+      <span class="wordmark-sep">-</span>
+      <a href="/" class="wordmark-sub">Back to Assistant</a>
+    </div>
+  </div>
+
+  <main class="bench-wrap">
+    <h1>Evaluation Dashboard</h1>
+    <p class="bench-muted">Run benchmark profiles and compare semantic accuracy, latency, and pass rates.</p>
+
+    <div class="bench-actions">
+      <button class="tbtn fill" id="runBtn" type="button">Run Fast + Balanced + Accurate</button>
+      <button class="tbtn" id="ablationBtn" type="button">Run RAG Ablation</button>
+      <button class="tbtn" id="refreshBtn" type="button">Refresh Reports</button>
+      <a class="tbtn" href="/analytics.html">Analytics panel</a>
+      <span id="statusText" class="bench-muted">Idle</span>
+    </div>
+
+    <section>
+      <h2>Latest Profile Comparison</h2>
+      <div class="bench-grid" id="profileCards"></div>
+    </section>
+
+    <section>
+      <h2>Recent Reports</h2>
+      <table class="bench-table">
+        <thead>
+          <tr>
+            <th>Generated</th>
+            <th>Profile</th>
+            <th>Accuracy</th>
+            <th>Latency</th>
+            <th>Passes</th>
+            <th>Model</th>
+          </tr>
+        </thead>
+        <tbody id="reportRows"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Latest RAG Ablation</h2>
+      <table class="bench-table">
+        <thead>
+          <tr>
+            <th>Variant</th>
+            <th>Accuracy</th>
+            <th>Semantic Passes</th>
+            <th>Avg Latency</th>
+          </tr>
+        </thead>
+        <tbody id="ablationRows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/benchmark.js?v=20260513a"></script>
+</body>
+</html>

@@ -2,10 +2,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def configure_tls() -> None:
+    insecure_ssl = os.getenv("CODE_ASSISTANT_INSECURE_SSL", "").strip().lower() in {"1", "true", "yes", "on"}
+    if insecure_ssl:
+        os.environ["HF_HUB_DISABLE_SSL_VERIFY"] = "1"
+        os.environ["CURL_CA_BUNDLE"] = ""
+        os.environ["REQUESTS_CA_BUNDLE"] = ""
+        os.environ["PYTHONHTTPSVERIFY"] = "0"
+        try:
+            import ssl
+
+            ssl._create_default_https_context = ssl._create_unverified_context  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        return
+
+    try:
+        import certifi
+
+        ca_bundle = certifi.where()
+        os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+        os.environ.setdefault("CURL_CA_BUNDLE", ca_bundle)
+    except Exception:
+        pass
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable gradient checkpointing to reduce VRAM usage.",
     )
+    parser.add_argument(
+        "--local-files-only",
+        action="store_true",
+        help="Load model/tokenizer only from local files (no network).",
+    )
     return parser
 
 
@@ -81,6 +113,7 @@ def render_messages(messages: list[dict], tokenizer) -> str:
 
 
 def main() -> int:
+    configure_tls()
     try:
         import torch
         from datasets import Dataset
@@ -102,7 +135,14 @@ def main() -> int:
     validation_path = Path(args.validation_file)
     output_dir = Path(args.output_dir)
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    model_path = Path(args.model)
+    use_local_files_only = args.local_files_only or model_path.exists()
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        trust_remote_code=True,
+        local_files_only=use_local_files_only,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -111,6 +151,7 @@ def main() -> int:
         args.model,
         trust_remote_code=True,
         torch_dtype=(torch.float16 if torch.cuda.is_available() else torch.float32),
+        local_files_only=use_local_files_only,
     )
     if args.gradient_checkpointing:
         model.gradient_checkpointing_enable()

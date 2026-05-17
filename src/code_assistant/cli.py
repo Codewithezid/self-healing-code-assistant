@@ -31,7 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--runtime-profile",
-        choices=["custom", "fast", "balanced", "accurate"],
+        choices=["custom", "fast", "balanced", "accurate", "goated"],
         default="custom",
         help="Named runtime preset for model, RAG, and retry settings.",
     )

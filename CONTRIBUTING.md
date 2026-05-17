@@ -29,6 +29,7 @@ If port 8000 is in use:
 
 ```powershell
 python -m compileall src scripts main.py web_main.py
+python -m unittest tests/test_pdf_ingestion.py tests/test_ingest_project_pdfs_script.py
 python scripts/audit_project.py
 python scripts/complex_benchmark.py
 ```

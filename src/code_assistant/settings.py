@@ -73,6 +73,8 @@ class BackendSettings:
     rag_collection_name: str
     rag_embedding_model: str
     rag_retrieval_k: int
+    rag_retrieval_fetch_k: int
+    rag_max_chunks_per_source: int
     rag_chunk_size: int
     rag_chunk_overlap: int
     corrective_rag_enabled: bool
@@ -106,7 +108,7 @@ def get_settings() -> BackendSettings:
         if configured_provider:
             default_provider = configured_provider
     default_runtime_profile = os.getenv("CODE_ASSISTANT_DEFAULT_RUNTIME_PROFILE", "custom").strip().lower() or "custom"
-    if default_runtime_profile not in {"custom", "fast", "balanced", "accurate"}:
+    if default_runtime_profile not in {"custom", "fast", "balanced", "accurate", "goated"}:
         default_runtime_profile = "custom"
     corrective_rag_mode = os.getenv("CODE_ASSISTANT_CORRECTIVE_RAG_MODE", "balanced").strip().lower() or "balanced"
     if corrective_rag_mode not in {"fast", "balanced", "aggressive"}:
@@ -127,8 +129,8 @@ def get_settings() -> BackendSettings:
             if require_access_token
             else ""
         ),
-        max_iterations_cap=_int_env("CODE_ASSISTANT_MAX_ITERATIONS_CAP", 3, minimum=1, maximum=10),
-        validation_timeout_cap=_int_env("CODE_ASSISTANT_VALIDATION_TIMEOUT_CAP", 5, minimum=1, maximum=30),
+        max_iterations_cap=_int_env("CODE_ASSISTANT_MAX_ITERATIONS_CAP", 8, minimum=1, maximum=10),
+        validation_timeout_cap=_int_env("CODE_ASSISTANT_VALIDATION_TIMEOUT_CAP", 15, minimum=1, maximum=30),
         rate_limit_requests=_int_env("CODE_ASSISTANT_RATE_LIMIT_REQUESTS", 8, minimum=1, maximum=200),
         rate_limit_window_seconds=_int_env("CODE_ASSISTANT_RATE_LIMIT_WINDOW_SECONDS", 300, minimum=10, maximum=86400),
         log_destination=os.getenv("CODE_ASSISTANT_LOG_DESTINATION", "none").strip().lower() or "none",
@@ -143,6 +145,8 @@ def get_settings() -> BackendSettings:
         rag_collection_name=os.getenv("CODE_ASSISTANT_RAG_COLLECTION", "code-assistant-project").strip() or "code-assistant-project",
         rag_embedding_model=os.getenv("CODE_ASSISTANT_RAG_EMBED_MODEL", "mistral-embed").strip() or "mistral-embed",
         rag_retrieval_k=_int_env("CODE_ASSISTANT_RAG_RETRIEVAL_K", 4, minimum=1, maximum=12),
+        rag_retrieval_fetch_k=_int_env("CODE_ASSISTANT_RAG_RETRIEVAL_FETCH_K", 10, minimum=1, maximum=24),
+        rag_max_chunks_per_source=_int_env("CODE_ASSISTANT_RAG_MAX_CHUNKS_PER_SOURCE", 2, minimum=1, maximum=8),
         rag_chunk_size=_int_env("CODE_ASSISTANT_RAG_CHUNK_SIZE", 1200, minimum=200, maximum=4000),
         rag_chunk_overlap=_int_env("CODE_ASSISTANT_RAG_CHUNK_OVERLAP", 200, minimum=0, maximum=1000),
         corrective_rag_enabled=_bool_env("CODE_ASSISTANT_CORRECTIVE_RAG_ENABLED", True),
