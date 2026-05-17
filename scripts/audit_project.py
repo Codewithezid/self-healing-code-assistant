@@ -96,7 +96,12 @@ def check_mocked_success_first_try() -> tuple[bool, str]:
     with patched_build_chain(responses):
         assistant = CodeAssistant(max_iterations=3)
         result = assistant.run("Write a hello world function.")
-    ok = result["error"] == "no" and result["iterations"] == 1
+    events = result.get("events", [])
+    runtime_validated = any(
+        event.get("stage") == "check_result" and event.get("status") == "done"
+        for event in events
+    )
+    ok = runtime_validated and result.get("iterations") == 1
     return ok, "Graph succeeds on first valid attempt" if ok else "Graph first-attempt success failed"
 
 
@@ -116,7 +121,20 @@ def check_mocked_retry_then_success() -> tuple[bool, str]:
     with patched_build_chain(responses):
         assistant = CodeAssistant(max_iterations=3)
         result = assistant.run("Write a palindrome checker.")
-    ok = result["error"] == "no" and result["iterations"] == 2
+    events = result.get("events", [])
+    had_import_failure = any(
+        event.get("stage") == "environment_verification"
+        and event.get("status") == "error"
+        and "Missing modules:" in str(event.get("detail", ""))
+        for event in events
+    )
+    had_later_runtime_success = any(
+        event.get("stage") == "check_result"
+        and event.get("status") == "done"
+        and int(event.get("iteration", 0) or 0) >= 2
+        for event in events
+    )
+    ok = had_import_failure and had_later_runtime_success and result.get("iterations") == 2
     return ok, "Graph retries after failure and then succeeds" if ok else "Retry loop failed"
 
 
@@ -136,6 +154,8 @@ def check_mocked_max_iteration_stop() -> tuple[bool, str]:
 
 
 def run_live_examples() -> tuple[int, int, list[str]]:
+    if os.getenv("CODE_ASSISTANT_AUDIT_SKIP_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return 0, 0, ["Live audit skipped: CODE_ASSISTANT_AUDIT_SKIP_LIVE is enabled."]
     if not os.getenv("MISTRAL_API_KEY"):
         return 0, 0, ["Live audit skipped: MISTRAL_API_KEY is not configured."]
 

@@ -34,4 +34,5 @@ jobs:
         env:
           CODE_ASSISTANT_RAG_ENABLED: 'false'
           CODE_ASSISTANT_CORRECTIVE_RAG_ENABLED: 'false'
+          CODE_ASSISTANT_AUDIT_SKIP_LIVE: 'true'
         run: python scripts/audit_project.py
